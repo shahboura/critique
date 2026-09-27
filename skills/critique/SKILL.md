@@ -29,6 +29,9 @@ critique --staged --web "Refactor auth middleware"
 critique main...HEAD --web "Feature branch changes"
 critique main...feature-branch --web "Compare branches"
 
+# GitHub pull request URL, including outside a local git repo
+critique https://github.com/remorses/sigillo/pull/19 --web "Sigillo PR #19"
+
 # Last N commits
 critique HEAD~3 --web "Recent changes"
 
@@ -44,6 +47,7 @@ critique --web "Deploy changes" --json
 ```
 
 Share the returned URL with the user so they can see the diff.
+Private PRs use `GH_TOKEN`, `GITHUB_TOKEN`, or an existing `gh auth login` session.
 
 ## PDF
 

@@ -230,6 +230,52 @@ export interface ParsedFile {
 /** Default number of context lines around each diff hunk */
 export const DEFAULT_CONTEXT_LINES = 6;
 
+export function parseGitHubPullRequestUrl(value: string): { owner: string; repo: string; number: number } | null {
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    return null;
+  }
+  if (url.protocol !== "https:" || url.hostname !== "github.com" || url.port || url.username || url.password) return null;
+  const match = url.pathname.match(/^\/([\w.-]+)\/([\w.-]+)\/pull\/([1-9]\d*)(?:\/files)?\/?$/);
+  if (!match) return null;
+  const number = Number(match[3]);
+  if (!Number.isSafeInteger(number)) return null;
+  return { owner: match[1]!, repo: match[2]!, number };
+}
+
+export function normalizeGitHubDiff(patch: string): string {
+  return patch
+    .replace(/^--- a\//gm, "--- ")
+    .replace(/^\+\+\+ b\//gm, "+++ ");
+}
+
+export async function fetchGitHubPullRequestDiff(pr: { owner: string; repo: string; number: number }): Promise<string> {
+  let token = process.env.GH_TOKEN || process.env.GITHUB_TOKEN;
+  if (!token) {
+    try {
+      token = execFileSync("gh", ["auth", "token"], { encoding: "utf-8", stdio: ["ignore", "pipe", "ignore"] }).trim();
+    } catch {
+      // Public pull requests work without authentication.
+    }
+  }
+  const url = `https://api.github.com/repos/${pr.owner}/${pr.repo}/pulls/${pr.number}`;
+  const headers = new Headers({ Accept: "application/vnd.github.diff", "User-Agent": "critique" });
+  if (token) headers.set("Authorization", `Bearer ${token}`);
+  const response = await fetch(url, {
+    headers,
+  });
+  if (!response.ok) {
+    throw new Error(`GitHub PR ${pr.owner}/${pr.repo}#${pr.number}: HTTP ${response.status}. Check the URL and GitHub access (gh auth login or GH_TOKEN).`);
+  }
+  const patch = await response.text();
+  if (patch.trim() && !patch.startsWith("diff --git ")) {
+    throw new Error(`GitHub did not return a diff for ${pr.owner}/${pr.repo}#${pr.number}. Check GitHub access and try again.`);
+  }
+  return normalizeGitHubDiff(patch);
+}
+
 export interface GitCommandOptions {
   staged?: boolean;
   commit?: string;

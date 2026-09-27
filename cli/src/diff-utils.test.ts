@@ -22,9 +22,56 @@ import {
   resolveCommitRange,
   formatCommitSummary,
   DEFAULT_CONTEXT_LINES,
+  parseGitHubPullRequestUrl,
+  normalizeGitHubDiff,
   type CommitInfo,
   type RangeCommits,
 } from "./diff-utils.js"
+
+describe("GitHub pull request diffs", () => {
+  it("accepts only canonical pull request URLs", () => {
+    expect(parseGitHubPullRequestUrl("https://github.com/remorses/sigillo/pull/19")).toEqual({
+      owner: "remorses", repo: "sigillo", number: 19,
+    })
+    expect(parseGitHubPullRequestUrl("https://github.com/remorses/sigillo/pull/19/files?diff=split")).toEqual({
+      owner: "remorses", repo: "sigillo", number: 19,
+    })
+    expect(parseGitHubPullRequestUrl("https://github.com/remorses/sigillo/issues/19")).toBeNull()
+    expect(parseGitHubPullRequestUrl("https://github.com.evil.test/remorses/sigillo/pull/19")).toBeNull()
+    expect(parseGitHubPullRequestUrl("https://github.com/remorses/sigillo/pull/19/extra")).toBeNull()
+    expect(parseGitHubPullRequestUrl("main")).toBeNull()
+  })
+
+  it("renders GitHub's prefixed patch as correct file statuses and paths", () => {
+    const patch = [
+      "diff --git a/src/main.ts b/src/main.ts",
+      "index 1111111..2222222 100644",
+      "--- a/src/main.ts",
+      "+++ b/src/main.ts",
+      "@@ -1 +1 @@",
+      "-old",
+      "+new",
+      "diff --git a/src/old.ts b/src/new.ts",
+      "similarity index 100%",
+      "rename from src/old.ts",
+      "rename to src/new.ts",
+      "diff --git a/src/new-file.ts b/src/new-file.ts",
+      "new file mode 100644",
+      "--- /dev/null",
+      "+++ b/src/new-file.ts",
+      "@@ -0,0 +1 @@",
+      "+hello",
+    ].join("\n") + "\n"
+    const normalized = normalizeGitHubDiff(patch)
+    const files = processFiles(parseGitDiffFiles(normalized, parsePatch), formatPatch)
+    expect(files.map((file) => [getFileName(file), getFileStatus(file)])).toEqual([
+      ["src/main.ts", "modified"],
+      ["src/new-file.ts", "added"],
+      ["src/new.ts", "renamed"],
+    ])
+    expect(normalized).toContain("+new\n")
+  })
+})
 
 // ============================================================================
 // processFiles ordering

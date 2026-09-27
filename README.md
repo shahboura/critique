@@ -35,6 +35,12 @@ Upload the same diff and get a shareable URL:
 critique --web "Current working tree"
 ```
 
+Share a GitHub pull request directly, from any directory:
+
+```bash
+critique https://github.com/remorses/sigillo/pull/19 --web "Sigillo PR #19"
+```
+
 Review staged changes:
 
 ```bash
@@ -45,6 +51,8 @@ critique --staged --web "Staged changes"
 ## Core Diff Commands
 
 critique follows the same mental model as `git diff`.
+
+A GitHub PR URL fetches the pull request diff from the GitHub API. Public PRs work without login. For private PRs, use `gh auth login`, `GH_TOKEN`, or `GITHUB_TOKEN`. The URL also works with `--pdf`, `--image`, `--filter`, or in the terminal viewer.
 
 ```bash
 # View unstaged changes, including untracked files
@@ -191,6 +199,9 @@ critique --commit HEAD --web "Latest commit"
 # PR-style branch diff
 critique main HEAD --web "Current branch"
 
+# Pull request from GitHub (no checkout needed)
+critique https://github.com/remorses/sigillo/pull/19 --web "Sigillo PR #19"
+
 # JSON output for scripts
 critique --web "Deploy changes" --json
 ```
@@ -219,7 +230,7 @@ Generated URLs look like `critique.work/v/<id>`.
 
 ```text
 ┌─────────────────────────────────────┐
-│ git diff                            │
+│ git diff / GitHub PR diff           │
 └─────────────────────────────────────┘
                    │
                    ▼

@@ -69,6 +69,8 @@ import {
   type GitCommandOptions,
   type CommitInfo,
   type RangeCommits,
+  parseGitHubPullRequestUrl,
+  fetchGitHubPullRequestDiff,
 } from "./diff-utils.js";
 import type { TreeFileInfo } from "./directory-tree.js";
 import { createCallDiff, type CallDiffByFile } from "./calldiff.js";
@@ -2170,7 +2172,7 @@ cli
     "[base] [head]",
     dedent`
 
-      Show diff for git references (defaults to unstaged changes).
+      Show diff for git references or a GitHub PR URL (defaults to unstaged changes).
 
       Prints the commits contained in the range before the diff, so you can see
       exactly what a shared link carries.
@@ -2191,6 +2193,12 @@ cli
 
     # PR-style comparison, listing every commit on the branch
     critique main HEAD --web "Branch changes"
+
+  `)
+  .example(dedent`
+
+    # Share a GitHub pull request without checking out its repository
+    critique https://github.com/remorses/sigillo/pull/19 --web "PR review"
 
   `)
   .option("--staged", "Show staged changes")
@@ -2217,13 +2225,22 @@ cli
   .option("--scrollback", "Output to terminal scrollback instead of TUI (auto-enabled when non-TTY)")
   .action(async (base, head, options) => {
     const callDiffEnabled = options.calldiff || process.env.CRITIQUE_CALLDIFF === "1";
+    const pullRequest = base ? parseGitHubPullRequestUrl(base) : null;
+    if (pullRequest && (head || options.staged || options.commit || options.stdin || options.watch || callDiffEnabled)) {
+      console.error("A GitHub PR URL cannot be combined with a head ref, --staged, --commit, --stdin, --watch, or --calldiff.");
+      process.exit(1);
+    }
+    if (base?.startsWith("https://github.com/") && !pullRequest) {
+      console.error("Expected a GitHub pull request URL such as https://github.com/owner/repo/pull/123");
+      process.exit(1);
+    }
     if (callDiffEnabled && (options.staged || options.stdin || options.watch)) {
       console.error("--calldiff does not support --staged, --stdin, or --watch")
       process.exit(1)
     }
 
     // Ensure we're inside a git repository before doing anything
-    if (!options.stdin) {
+    if (!options.stdin && !pullRequest) {
       ensureGitRepo();
     }
 
@@ -2233,7 +2250,7 @@ cli
     }
 
     // Build git command once (used by all modes)
-    const gitCommand = buildGitCommand({
+    const gitCommand = pullRequest ? null : buildGitCommand({
       staged: options.staged,
       commit: options.commit,
       base,
@@ -2249,7 +2266,13 @@ cli
     // Get diff content - from stdin or git
     let diffContent: string;
 
-    if (options.stdin) {
+    if (pullRequest) {
+      diffContent = await fetchGitHubPullRequestDiff(pullRequest);
+      diffContent = await filterCombinedDiffByPatterns(diffContent, {
+        filter: options.filter,
+        positionalFilters: options['--'],
+      });
+    } else if (options.stdin) {
       // Handle stdin mode (for lazygit pager integration)
       // Lazygit uses --color=always by default, so strip ANSI escape codes
       // before parsing the diff (parsePatch expects plain text)
@@ -2260,7 +2283,7 @@ cli
       diffContent = stripAnsi(diffContent);
     } else {
       // Get diff from git (runs once for all modes)
-      const { stdout: gitDiff } = await execAsync(gitCommand, {
+      const { stdout: gitDiff } = await execAsync(gitCommand!, {
         encoding: "utf-8",
       });
       diffContent = gitDiff;
@@ -2338,7 +2361,7 @@ cli
     const commits = await reportCommitsInRange(cleanedDiff, {
       staged: options.staged,
       commit: options.commit,
-      base,
+      base: pullRequest ? undefined : base,
       head,
       json: options.json,
       silent: options.stdin || options.noCommitList,
@@ -2445,7 +2468,7 @@ cli
 
           const fetchDiff = async () => {
             try {
-              const { stdout: gitDiff } = await execAsync(gitCommand, {
+              const { stdout: gitDiff } = await execAsync(gitCommand!, {
                 encoding: "utf-8",
               });
 
