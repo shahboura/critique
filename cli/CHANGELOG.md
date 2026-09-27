@@ -1,4 +1,4 @@
-# 0.3.0
+# 0.3.1
 
 1. **View a GitHub pull request without a local checkout.** Pass a PR URL to open its diff in the terminal, or combine it with `--web` to share a preview. The URL also works with `--pdf`, `--image`, and `--filter`.
 
