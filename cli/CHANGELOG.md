@@ -1,3 +1,21 @@
+# 0.4.0
+
+1. **Password protected web links.** Pass `--password` or set `CRITIQUE_PASSWORD` with `--web` (also works with `critique review --web`). Viewers type the password once; the browser remembers every password that worked, so later links shared with the same password open without asking.
+
+   ```bash
+   critique --web --password 'hunter2'
+
+   # or for every upload
+   export CRITIQUE_PASSWORD='hunter2'
+   critique --web
+   ```
+
+   Protected links have no social preview image. The comments, `.patch`, `/raw` and `/annotations` endpoints need the password too. Scripts send it in a header:
+
+   ```bash
+   curl -H 'X-Critique-Password: hunter2' "$CRITIQUE_URL.patch"
+   ```
+
 # 0.3.1
 
 1. **View a GitHub pull request without a local checkout.** Pass a PR URL to open its diff in the terminal, or combine it with `--web` to share a preview. The URL also works with `--pdf`, `--image`, and `--filter`.
