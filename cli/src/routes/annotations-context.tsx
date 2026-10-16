@@ -4,6 +4,7 @@
 
 import { Hono } from "hono"
 import type { KVNamespace } from "@cloudflare/workers-types"
+import { checkDiffAccess, DIFF_ID_REGEX, PASSWORD_HEADER } from "../diff-password.js"
 
 type Bindings = {
   CRITIQUE_KV: KVNamespace
@@ -82,8 +83,13 @@ const route = new Hono<{ Bindings: Bindings }>()
 route.get("/v/:id/annotations", async (c) => {
   const id = c.req.param("id")
 
-  if (!id || !/^[a-f0-9]{16,32}$/.test(id)) {
+  if (!id || !DIFF_ID_REGEX.test(id)) {
     return c.text("Invalid ID", 400)
+  }
+
+  const access = await checkDiffAccess(c, id)
+  if (!access.allowed) {
+    return c.text(`Password required. Send it in the ${PASSWORD_HEADER} header.`, 401)
   }
 
   // Fetch annotations from CommentRoom DO

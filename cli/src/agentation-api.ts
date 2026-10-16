@@ -8,8 +8,11 @@
 // via proxyToDO() on every proxied request.
 
 import { Hono } from "hono"
+import type { KVNamespace } from "@cloudflare/workers-types"
+import { checkDiffAccess, diffAccessGuard } from "./diff-password.js"
 
 type Bindings = {
+  CRITIQUE_KV: KVNamespace
   CommentRoom: {
     idFromName(name: string): { toString(): string }
     get(id: { toString(): string }): {
@@ -45,6 +48,11 @@ function parseAnnotationId(annotationId: string): { sessionId: string; rawId: st
   }
 }
 
+// Session IDs are diff IDs, so comments of a password protected diff need its password too.
+// "/sessions/:id/*" also matches "/sessions/:id".
+api.use("/sessions/:id/*", diffAccessGuard((c) => c.req.param("id")))
+api.use("/annotations/:id/*", diffAccessGuard((c) => parseAnnotationId(c.req.param("id") ?? "")?.sessionId))
+
 // Health check (Agentation polls this)
 api.get("/health", (c) => c.json({ status: "ok" }))
 
@@ -54,7 +62,10 @@ api.get("/health", (c) => c.json({ status: "ok" }))
 api.post("/sessions", async (c) => {
   const body = await c.req.json<{ url?: string }>()
   const url = body.url
-  const match = url?.match(/\/v\/([a-f0-9]{16,32})/)
+  const match = url?.match(/\/v\/(p?[a-f0-9]{16,32})/)
+  if (match?.[1] && !(await checkDiffAccess(c, match[1])).allowed) {
+    return c.json({ error: "Password required" }, 401)
+  }
   const sessionId = match?.[1] || crypto.randomUUID()
   const resp = await proxyToDO(c.env, sessionId, "https://internal/api/session")
   const session = await resp.json()

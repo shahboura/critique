@@ -65,7 +65,7 @@ async function main() {
 
   // ── Step 5: upload HTML (no OG) ──
   const t5 = time("5. upload HTML (no OG image)")
-  const result = await uploadHtml(htmlDesktop, htmlMobile)
+  const result = await uploadHtml({ htmlDesktop, htmlMobile })
   t5.stop()
   console.error(`     URL: ${result.url}`)
 

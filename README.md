@@ -225,6 +225,25 @@ Generated URLs look like `critique.work/v/<id>`.
 | `--no-commit-list` | Do not list the commits contained in the range | off |
 | `--open` | Open the URL in your browser | none |
 | `--json` | Print `{ url, id, files, commits }` for scripts | none |
+| `--password <pw>` | Require a password to open the link (or set `CRITIQUE_PASSWORD`) | none |
+
+### Password Protected Links
+
+Add a **password** to keep a link private. Viewers type it once.
+
+```bash
+critique --web --password 'hunter2'
+
+# or for every upload
+export CRITIQUE_PASSWORD='hunter2'
+critique --web
+```
+
+The browser keeps every password that worked, so one password unlocks all diffs you share with it. Protected links have no social preview image, and the comments, `.patch` and `/annotations` endpoints need the password too. Scripts send it in a header:
+
+```bash
+curl -H 'X-Critique-Password: hunter2' "$CRITIQUE_URL.patch"
+```
 
 ### How Web Uploads Work
 
@@ -362,7 +381,7 @@ The PDF preserves syntax highlighting and diff formatting. Email it to your Kind
 This package ships a skill file that teaches AI coding agents how to use critique for diff URLs, PDFs, images, and selective hunk staging.
 
 ```bash
-npx -y skills add remorses/critique
+npx -y skills add remorses/critique -g -y
 ```
 
 ## Features
@@ -387,6 +406,7 @@ TypeScript, JavaScript, TSX, JSX, JSON, Markdown, HTML, CSS, Python, Rust, Go, J
 | --- | --- | --- |
 | `REACT_EDITOR` | Editor command for click-to-open | `zed` |
 | `CRITIQUE_WORKER_URL` | Custom worker URL for web previews | `https://critique.work` |
+| `CRITIQUE_PASSWORD` | Password for every `--web` upload; `--password` overrides it | none |
 
 ## Ignored Files
 

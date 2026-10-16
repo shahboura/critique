@@ -101,6 +101,8 @@ import {
 interface ReviewWebOptions {
   web: boolean;
   open?: boolean;
+  /** --password value; CRITIQUE_PASSWORD env var is the fallback */
+  password?: string;
 }
 
 interface ReviewPdfOptions {
@@ -578,7 +580,9 @@ async function runReviewMode(
         uploadHtml,
         openInBrowser,
         cleanupTempFile,
+        resolveWebPassword,
       } = await import("./web-utils.js");
+      const password = resolveWebPassword(webOptions.password);
 
       // Read review data from YAML
       const reviewData = readReviewYaml(yamlPath);
@@ -604,6 +608,7 @@ async function runReviewMode(
           mobileCols: 100,
           baseRows,
           themeName,
+          skipOgImage: Boolean(password),
         });
 
         // Clean up temp file
@@ -611,10 +616,11 @@ async function runReviewMode(
         if (acpClient) await acpClient.close();
 
         webSpinner.message("Uploading...");
-        const result = await uploadHtml(htmlDesktop, htmlMobile, ogImage);
+        const result = await uploadHtml({ htmlDesktop, htmlMobile, ogImage, password });
         webSpinner.stop("Uploaded");
 
         clack.log.success(`Preview URL: ${result.url}`, out);
+        if (result.passwordProtected) clack.log.info("Password protected", out);
         clack.log.info(formatPreviewExpiry(result.expiresInDays), out);
         if (typeof result.expiresInDays === "number") {
           clack.log.info("Get unlimited links and support the project: https://critique.work/buy", out);
@@ -831,6 +837,8 @@ interface ResumeModeOptions {
   pdfFilename?: string;
   pdfPageSize?: string;
   open?: boolean;
+  /** --password value; CRITIQUE_PASSWORD env var is the fallback */
+  password?: string;
 }
 
 // Resume mode handler - display a previously saved review or restart an interrupted one
@@ -993,7 +1001,9 @@ async function runResumeMode(options: ResumeModeOptions) {
       captureReviewResponsiveHtml,
       uploadHtml,
       openInBrowser,
+      resolveWebPassword,
     } = await import("./web-utils.js");
+    const password = resolveWebPassword(options.password);
 
     // For web, always use default theme (with auto dark/light inversion) unless explicitly overridden
     const themeName = defaultThemeName;
@@ -1011,13 +1021,15 @@ async function runResumeMode(options: ResumeModeOptions) {
         mobileCols: 100,
         baseRows,
         themeName,
+        skipOgImage: Boolean(password),
       });
 
       webSpinner.message("Uploading...");
-      const result = await uploadHtml(htmlDesktop, htmlMobile, ogImage);
+      const result = await uploadHtml({ htmlDesktop, htmlMobile, ogImage, password });
       webSpinner.stop("Uploaded");
 
       clack.log.success(`Preview URL: ${result.url}`);
+      if (result.passwordProtected) clack.log.info("Password protected");
       clack.log.info(formatPreviewExpiry(result.expiresInDays));
       if (typeof result.expiresInDays === "number") {
         clack.log.info("Get unlimited links and support the project: https://critique.work/buy");
@@ -1128,6 +1140,8 @@ interface WebModeOptions {
   callDiffByFile?: CallDiffByFile;
   /** Commits contained in the diff, included in the --json payload */
   commits?: RangeCommits | null;
+  /** --password value; CRITIQUE_PASSWORD env var is the fallback */
+  password?: string;
 }
 
 async function runWebMode(
@@ -1139,7 +1153,9 @@ async function runWebMode(
     uploadHtml,
     uploadOgImage,
     openInBrowser,
+    resolveWebPassword,
   } = await import("./web-utils.js");
+  const password = resolveWebPassword(options.password);
 
   // Use stderr for progress when --json is set, stdout otherwise
   const log = options.json ? console.error.bind(console) : console.log.bind(console);
@@ -1180,9 +1196,10 @@ async function runWebMode(
 
     log("Uploading...");
 
-    const result = await uploadHtml(htmlDesktop, htmlMobile, undefined, diffContent);
+    const result = await uploadHtml({ htmlDesktop, htmlMobile, patch: diffContent, password });
 
     log(`\nPreview URL: ${result.url}`);
+    if (result.passwordProtected) log("Password protected");
     log(formatPreviewExpiry(result.expiresInDays));
     if (typeof result.expiresInDays === "number") {
       log("Get unlimited links and support the project: https://critique.work/buy");
@@ -1215,7 +1232,9 @@ async function runWebMode(
     // Generate and upload OG image in the background after URL is printed.
     // The URL is already available — this just adds social media previews.
     // Hard cap at 8s to prevent the process hanging after URL output.
+    // Protected diffs have no OG image, so link previews show nothing private.
     const ogUpload = (async () => {
+      if (result.passwordProtected) return;
       try {
         const { renderDiffToOgImage } = await import("./image.js");
         const ogImg = await renderDiffToOgImage(diffContent, {
@@ -2218,6 +2237,7 @@ cli
   .option("--pdf-page-size <size>", "PDF page size: a4-landscape (default), a4-portrait, a3-landscape, letter-landscape, or WxH in points")
   .option("--open", "Open in browser (with --web/--pdf)")
   .option("--json", "Output JSON to stdout (with --web)")
+  .option("--password <password>", "Require a password to view the --web link (or set CRITIQUE_PASSWORD)")
   .option("--image", "Generate images instead of TUI (saved to temp directory)")
   .option("--cols <cols>", "Desktop columns for web/image render (default: 240)")
   .option("--mobile-cols <cols>", "Mobile columns for web render (default: 100)")
@@ -2379,6 +2399,7 @@ cli
         theme: options.theme,
         callDiffByFile,
         commits,
+        password: options.password,
       });
       return;
     }
@@ -2607,6 +2628,7 @@ cli
   .option("--open", "Open in browser/viewer (with --web/--pdf)")
   .option("--json", "Output JSON to stdout (implies --web)")
   .option("--resume [id]", "Resume a previous review (shows select if no ID provided)")
+  .option("--password <password>", "Require a password to view the --web link (or set CRITIQUE_PASSWORD)")
   .action(async (base, head, options) => {
     ensureGitRepo();
     try {
@@ -2619,6 +2641,7 @@ cli
           pdfFilename: typeof options.pdf === 'string' ? options.pdf : undefined,
           pdfPageSize: options.pdfPageSize,
           open: options.open,
+          password: options.password,
         });
         return;
       }
@@ -2647,7 +2670,7 @@ cli
 
       // --json implies --web
       const useWeb = options.web || options.json;
-      const webOptions = useWeb ? { web: true, open: options.open } : undefined;
+      const webOptions = useWeb ? { web: true, open: options.open, password: options.password } : undefined;
       const usePdf = options.pdf !== undefined;
       const pdfOptions = usePdf ? {
         pdf: true,
@@ -2956,6 +2979,7 @@ cli
     description: "Filter files by glob pattern (can be used multiple times)",
   }))
   .option("--title <title>", "HTML document title")
+  .option("--password <password>", "Require a password to view the link (or set CRITIQUE_PASSWORD)")
   .action(async (base, head, options) => {
     ensureGitRepo();
     // Build git command and get diff
@@ -3019,6 +3043,7 @@ cli
       mobileCols: parseInt(options.mobileCols) || 100,
       theme: options.theme,
       commits,
+      password: options.password,
     });
   });
 

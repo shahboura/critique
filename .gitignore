@@ -46,3 +46,4 @@ cli/public/comments.css
 cli/public/agentation-widget.js
 
 .test*
+.wrangler/

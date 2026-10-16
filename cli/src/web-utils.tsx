@@ -43,6 +43,12 @@ export interface UploadResult {
   id: string
   ogImageUrl?: string
   expiresInDays?: number | null
+  passwordProtected?: boolean
+}
+
+/** --password flag wins over the CRITIQUE_PASSWORD env var. */
+export function resolveWebPassword(flag?: string): string | undefined {
+  return flag || process.env.CRITIQUE_PASSWORD || undefined
 }
 
 function renderNoticeBlock(options: {
@@ -951,15 +957,27 @@ export async function captureReviewResponsiveHtml(
 /**
  * Upload HTML to the critique.work worker
  */
-export async function uploadHtml(
-  htmlDesktop: string,
-  htmlMobile: string,
-  ogImage?: Buffer | null,
-  patch?: string,
-): Promise<UploadResult> {
+export async function uploadHtml({
+  htmlDesktop,
+  htmlMobile,
+  ogImage,
+  patch,
+  password,
+}: {
+  htmlDesktop: string
+  htmlMobile: string
+  ogImage?: Buffer | null
+  patch?: string
+  /** Viewers must type this password. The worker drops the OG image for protected diffs. */
+  password?: string
+}): Promise<UploadResult> {
   const body: Record<string, string> = { 
     html: htmlDesktop, 
     htmlMobile,
+  }
+
+  if (password) {
+    body.password = password
   }
 
   // Include OG image as base64 if provided
@@ -993,12 +1011,7 @@ export async function uploadHtml(
     throw new Error(`Upload failed: ${error}`)
   }
 
-  const result = (await response.json()) as {
-    id: string
-    url: string
-    ogImageUrl?: string
-    expiresInDays?: number | null
-  }
+  const result = (await response.json()) as UploadResult
   return result
 }
 
@@ -1082,13 +1095,13 @@ export function extractDiffId(urlOrId: string): string | null {
   const trimmed = urlOrId.trim()
   
   // Try to extract from URL path
-  const urlMatch = trimmed.match(/\/v\/([a-f0-9]{16,32})(?:\?|$|#)?/i)
+  const urlMatch = trimmed.match(/\/v\/(p?[a-f0-9]{16,32})(?:\?|$|#)?/i)
   if (urlMatch && urlMatch[1]) {
     return urlMatch[1].toLowerCase()
   }
   
   // Check if it's a raw hex ID
-  if (/^[a-f0-9]{16,32}$/i.test(trimmed)) {
+  if (/^p?[a-f0-9]{16,32}$/i.test(trimmed)) {
     return trimmed.toLowerCase()
   }
   

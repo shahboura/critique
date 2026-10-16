@@ -22,6 +22,20 @@ import {
   KV_SCHEMA_VERSION,
   type KvValueMetadata,
 } from "./kv-codec.js"
+import {
+  checkDiffAccess,
+  checkTypedPassword,
+  DIFF_ID_REGEX,
+  generateProtectedId,
+  isProtectedId,
+  isValidPassword,
+  MAX_PASSWORD_LENGTH,
+  PASSWORD_HEADER,
+  passwordKvKey,
+  rememberPassword,
+  renderLockPage,
+  setDiffPassword,
+} from "./diff-password.js"
 
 // Re-export CommentRoom so wrangler can discover the Durable Object class
 export { CommentRoom } from "@critique.work/server"
@@ -326,6 +340,7 @@ class CritiqueKv {
       this.kv.delete(`${id}-patch`),
       this.kv.delete(`og-${id}`),
       this.kv.delete(`owner:${id}`),
+      this.kv.delete(passwordKvKey(id)),
     ])
   }
 }
@@ -446,30 +461,31 @@ function extractTitle(html: string): string {
 }
 
 // Upload HTML content
-// POST /upload with JSON body { html: string, htmlMobile?: string, ogImage?: string (base64) }
-// Returns { id: string, url: string, ogImageUrl?: string }
+// POST /upload with JSON body { html: string, htmlMobile?: string, ogImage?: string (base64), patch?: string, password?: string }
+// Returns { id: string, url: string, ogImageUrl?: string, passwordProtected: boolean }
 //
 // OG tags are always injected with the deterministic URL /og/{id}.png,
 // even if no ogImage is provided yet. This lets the CLI upload HTML first
 // and PATCH the OG image later without needing to re-read/modify stored HTML.
+// Password protected diffs get a random ID and no OG image, so link previews leak nothing.
 app.post("/upload", async (c) => {
   try {
     const kv = new CritiqueKv(c.env.CRITIQUE_KV)
-    const body = await c.req.json<{ html: string; htmlMobile?: string; ogImage?: string; patch?: string }>()
+    const body = await c.req.json<{ html: string; htmlMobile?: string; ogImage?: string; patch?: string; password?: string }>()
 
     if (!body.html || typeof body.html !== "string") {
       return c.json({ error: "Missing or invalid 'html' field" }, 400)
     }
+    if (body.password !== undefined && !isValidPassword(body.password)) {
+      return c.json({ error: `Password must be 1 to ${MAX_PASSWORD_LENGTH} characters` }, 400)
+    }
+    const password = body.password
 
-    // Generate hash of the desktop HTML content as the key (enables caching/deduplication)
-    const encoder = new TextEncoder()
-    const data = encoder.encode(body.html)
-    const hashBuffer = await crypto.subtle.digest("SHA-256", data)
-    const hashArray = Array.from(new Uint8Array(hashBuffer))
-    const hashHex = hashArray.map(b => b.toString(16).padStart(2, "0")).join("")
-
-    // Use first 32 chars of hash as ID (128 bits, secure against guessing)
-    const id = hashHex.slice(0, 32)
+    // Public diffs: first 32 hex chars of the HTML hash (128 bits, enables deduplication).
+    // Protected diffs: "p" + random hex, so the ID itself marks the diff as protected.
+    const id = password
+      ? generateProtectedId()
+      : toHex(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(body.html))).slice(0, 32)
 
     const url = new URL(c.req.url)
 
@@ -484,8 +500,13 @@ app.post("/upload", async (c) => {
       await kv.setOwnerSecret(id, ownerSecret, ttlSeconds)
     }
 
+    // Store the password before any content, so the diff is never readable without it
+    if (password) {
+      await setDiffPassword({ kv: c.env.CRITIQUE_KV, id, password, ttlSeconds })
+    }
+
     // Store OG image if provided inline
-    if (body.ogImage && typeof body.ogImage === "string") {
+    if (!password && body.ogImage && typeof body.ogImage === "string") {
       const binaryString = atob(body.ogImage)
       const bytes = new Uint8Array(binaryString.length)
       for (let i = 0; i < binaryString.length; i++) {
@@ -497,10 +518,10 @@ app.post("/upload", async (c) => {
     // Always inject OG tags with the deterministic URL.
     // The image may arrive later via PATCH /upload/:id/og —
     // the URL will already be correct in the stored HTML.
-    const ogImageUrl = `${url.origin}/og/${id}.png`
+    const ogImageUrl = password ? undefined : `${url.origin}/og/${id}.png`
     const title = extractTitle(body.html)
-    const htmlDesktop = injectOgTags(body.html, ogImageUrl, title)
-    const htmlMobile = body.htmlMobile
+    const htmlDesktop = ogImageUrl ? injectOgTags(body.html, ogImageUrl, title) : body.html
+    const htmlMobile = body.htmlMobile && ogImageUrl
       ? injectOgTags(body.htmlMobile, ogImageUrl, title)
       : body.htmlMobile
 
@@ -524,6 +545,7 @@ app.post("/upload", async (c) => {
       url: viewUrl,
       ogImageUrl,
       expiresInDays: hasActiveLicense ? null : 7,
+      passwordProtected: Boolean(password),
     })
   } catch (error) {
     return c.json({ error: "Failed to process upload" }, 500)
@@ -549,6 +571,9 @@ app.patch("/upload/:id/og", async (c) => {
     const storedSecret = await kv.getOwnerSecret(id)
     if (!storedSecret || storedSecret !== ownerSecret) {
       return c.json({ error: "Invalid owner secret" }, 403)
+    }
+    if (isProtectedId(id)) {
+      return c.json({ error: "Password protected diffs have no OG image" }, 409)
     }
 
     const body = await c.req.json<{ ogImage: string }>()
@@ -797,8 +822,12 @@ async function handleView(c: any) {
   // e.g. /v/abc123.patch → strips suffix, returns text/plain
   if (id.endsWith(".patch")) {
     id = id.slice(0, -".patch".length)
-    if (!id || !/^[a-f0-9]{16,32}$/.test(id)) {
+    if (!id || !DIFF_ID_REGEX.test(id)) {
       return c.text("Invalid ID", 400)
+    }
+    const access = await checkDiffAccess(c, id)
+    if (!access.allowed) {
+      return c.text(`Password required. Send it in the ${PASSWORD_HEADER} header.`, 401)
     }
     const patch = await kv.getPatch(id)
     if (!patch) {
@@ -807,11 +836,11 @@ async function handleView(c: any) {
     return c.text(patch, 200, {
       "Content-Type": "text/plain; charset=utf-8",
       "Content-Disposition": `inline; filename="${id}.patch"`,
-      "Cache-Control": "public, max-age=86400",
+      "Cache-Control": access.protected ? "private, no-store" : "public, max-age=86400",
     })
   }
 
-  if (!id || !/^[a-f0-9]{16,32}$/.test(id)) {
+  if (!id || !DIFF_ID_REGEX.test(id)) {
     return c.text("Invalid ID", 400)
   }
 
@@ -824,6 +853,15 @@ async function handleView(c: any) {
     const url = new URL(c.req.url)
     url.searchParams.set("v", "mobile")
     return c.redirect(url.toString(), 302)
+  }
+
+  const access = await checkDiffAccess(c, id)
+  if (!access.allowed) {
+    return renderLockPage(c, { id })
+  }
+  // Refresh the cookie so it never expires while the diff is in use
+  if (access.protected) {
+    rememberPassword(c, access.password)
   }
 
   // Serve the appropriate version based on query param
@@ -866,8 +904,9 @@ async function handleView(c: any) {
   // Stream the HTML content for faster initial load
   return stream(c, async (s) => {
     c.header("Content-Type", "text/html; charset=utf-8")
-    // Cache is now safe - URL determines content, no Vary needed
-    c.header("Cache-Control", "public, max-age=86400")
+    // Cache is now safe - URL determines content, no Vary needed.
+    // Protected diffs must never sit in a shared cache.
+    c.header("Cache-Control", access.protected ? "private, no-store" : "public, max-age=86400")
 
     // Stream in chunks for better performance
     const chunkSize = 16 * 1024 // 16KB chunks
@@ -884,13 +923,35 @@ async function handleView(c: any) {
 app.get("/v/:id", handleView)
 app.get("/view/:id", handleView)
 
+// Password form submit. Wrong password shows the form again; a correct one is added
+// to the cookie list and redirects back to the diff (keeping ?v=mobile).
+app.post("/v/:id/unlock", async (c) => {
+  const id = c.req.param("id")
+  if (!DIFF_ID_REGEX.test(id)) {
+    return c.text("Invalid ID", 400)
+  }
+  const form = await c.req.parseBody()
+  const password = form["password"]
+  if (!isValidPassword(password)) {
+    return renderLockPage(c, { id, error: "Enter the password" })
+  }
+  const result = await checkTypedPassword(c, { id, password })
+  if (result === "wrong") {
+    return renderLockPage(c, { id, error: "Wrong password" })
+  }
+  if (result === "correct") {
+    rememberPassword(c, password)
+  }
+  return c.redirect(`/v/${id}${new URL(c.req.url).search}`, 303)
+})
+
 // Delete a diff by ID (requires owner secret)
 // DELETE /v/:id with X-Critique-Owner-Secret header
 app.delete("/v/:id", async (c) => {
   const id = c.req.param("id")
   const kv = new CritiqueKv(c.env.CRITIQUE_KV)
 
-  if (!id || !/^[a-f0-9]{16,32}$/.test(id)) {
+  if (!id || !DIFF_ID_REGEX.test(id)) {
     return c.json({ error: "Invalid ID" }, 400)
   }
 
@@ -930,7 +991,7 @@ app.get("/og/:id.png", async (c) => {
 
   const kv = new CritiqueKv(c.env.CRITIQUE_KV)
 
-  if (!id || !/^[a-f0-9]{16,32}$/.test(id)) {
+  if (!id || !DIFF_ID_REGEX.test(id)) {
     return c.text("Invalid ID", 400)
   }
 
@@ -953,8 +1014,13 @@ app.get("/raw/:id", async (c) => {
 
   const kv = new CritiqueKv(c.env.CRITIQUE_KV)
 
-  if (!id || !/^[a-f0-9]{16,32}$/.test(id)) {
+  if (!id || !DIFF_ID_REGEX.test(id)) {
     return c.json({ error: "Invalid ID" }, 400)
+  }
+
+  const access = await checkDiffAccess(c, id)
+  if (!access.allowed) {
+    return c.json({ error: "Password required" }, 401)
   }
 
   const html = await kv.getHtml(id)
@@ -965,6 +1031,7 @@ app.get("/raw/:id", async (c) => {
 
   return c.text(html, 200, {
     "Content-Type": "text/html; charset=utf-8",
+    "Cache-Control": "private, no-store",
   })
 })
 
@@ -975,8 +1042,13 @@ async function handleHead(c: any) {
 
   const kv = new CritiqueKv(c.env.CRITIQUE_KV)
 
-  if (!id || !/^[a-f0-9]{16,32}$/.test(id)) {
+  if (!id || !DIFF_ID_REGEX.test(id)) {
     return c.body(null, 400)
+  }
+
+  const access = await checkDiffAccess(c, id)
+  if (!access.allowed) {
+    return c.body(null, 401)
   }
 
   const html = await kv.getHtml(id)

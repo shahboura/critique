@@ -277,7 +277,7 @@ async function main() {
     })
 
     console.log("Uploading...")
-    const result = await uploadHtml(htmlDesktop, htmlMobile, ogImage)
+    const result = await uploadHtml({ htmlDesktop, htmlMobile, ogImage })
     console.log(`\nPreview URL: ${result.url}`)
     console.log("(expires in 7 days)")
     return
