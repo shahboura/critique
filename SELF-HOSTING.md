@@ -121,7 +121,8 @@ docker build -t critique-selfhost . && \
   docker save critique-selfhost | ssh server 'docker load'
 
 # c) registry — CI builds and pushes on every push to main (native
-#    linux/amd64 + linux/arm64 runners, multi-arch manifest)
+#    linux/amd64 + linux/arm64 runners, multi-arch manifest; each arch is
+#    booted and smoke-tested before publishing)
 #    image: ghcr.io/<your-github-user>/critique:latest
 #    first push creates a private package; flip it to public in the
 #    package settings if you want anonymous pulls.

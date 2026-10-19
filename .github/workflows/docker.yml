@@ -66,6 +66,23 @@ jobs:
           cache-from: type=gha,scope=${{ env.PLATFORM_PAIR }}
           cache-to: type=gha,mode=max,scope=${{ env.PLATFORM_PAIR }}
 
+      - name: Smoke test the pushed image
+        run: |
+          image="ghcr.io/${{ github.repository }}@${{ steps.build.outputs.digest }}"
+          docker pull "$image"
+          docker rm -f smoke 2>/dev/null || true
+          docker run -d --name smoke --cap-drop ALL --security-opt no-new-privileges:true \
+            -e PUBLIC_URL=http://smoke.test "$image"
+          code=""
+          for i in $(seq 1 90); do
+            code=$(docker exec smoke node -e 'fetch("http://127.0.0.1:8787/",{redirect:"manual"}).then(r=>console.log(r.status)).catch(()=>process.exit(1))' 2>/dev/null || true)
+            [ "$code" = "302" ] && break
+            sleep 1
+          done
+          if [ "$code" != "302" ]; then docker logs smoke | tail -30; exit 1; fi
+          docker exec -e EXPECT_PUB=http://smoke.test smoke node /app/scripts/selfhost-smoke.mjs
+          docker rm -f smoke
+
       - name: Export digest
         run: |
           mkdir -p /tmp/digests
