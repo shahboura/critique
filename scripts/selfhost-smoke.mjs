@@ -8,6 +8,8 @@
 // EXPECT_PUB is optional. When set (matching the container's PUBLIC_URL), every
 // generated URL must use it. Without it, URLs must use the request origin.
 // In both modes nothing may leak "critique.work". Exits 0 when all checks pass.
+// Note: EXPECT_PUB only changes the assertions when the public origin differs
+// from CRITIQUE_URL.
 
 const BASE = (process.env.CRITIQUE_URL || "http://127.0.0.1:8787").replace(/\/+$/, "")
 const EXPECT_PUB = process.env.EXPECT_PUB ? process.env.EXPECT_PUB.replace(/\/+$/, "") : null
@@ -30,11 +32,15 @@ const up = await (await fetch(BASE + "/upload", {
   body: JSON.stringify({
     html: '<html><head><title>smoke</title><meta name="viewport" content="w"></head><body><p>hi</p></body></html>',
     patch: "diff --git a/a b/a\n--- a/a\n+++ b/a\n@@ -1 +1 @@\n-a\n+b\n",
+    ogImage: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
   }),
 })).json()
 usesOrigin("upload url", up.url)
 usesOrigin("ogImageUrl", up.ogImageUrl)
 const id = up.id
+
+r = await fetch(`${BASE}/og/${id}.png`)
+ok("og image served", r.status === 200 && (r.headers.get("content-type") || "").includes("image/png"))
 
 r = await fetch(`${BASE}/v/${id}`)
 const html = await r.text()

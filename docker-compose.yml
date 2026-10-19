@@ -8,10 +8,14 @@
 #
 # nginx users: comments stream over SSE and uploads can be large — for the
 # /a/ and /upload locations add
+#   proxy_set_header Host $host;
+#   proxy_set_header X-Forwarded-Proto $scheme;
 #   proxy_buffering off;
 #   proxy_read_timeout 1h;
 #   client_max_body_size 50m;
-# Caddy and Traefik need no extra configuration.
+# Caddy and Traefik need no extra configuration. Password-protected diffs
+# need https (or localhost): the unlock cookie is Secure and browsers drop it
+# over plain http.
 services:
   critique:
     # Building locally (default) — or use the image this repo's CI pushes to

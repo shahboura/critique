@@ -42,15 +42,15 @@ RUN bun run build:comments-widget && bun run build:comments-server
 # custom-domain routes removed: in local mode wrangler rewrites request
 # origins to the first route instead of the inbound Host, which would leak
 # critique.work into every generated URL.
-RUN bun -e 'import fs from "node:fs"; const cfg = JSON.parse(fs.readFileSync("cli/wrangler.jsonc", "utf8").replace(/^\s*\/\/.*$/gm, "")); delete cfg.routes; if (cfg.env?.preview) delete cfg.env.preview.routes; if (JSON.stringify(cfg).includes("\"routes\"")) throw new Error("derived config still contains routes"); fs.writeFileSync("cli/wrangler.selfhost.json", JSON.stringify(cfg, null, 2));'
+RUN bun -e 'import fs from "node:fs"; const cfg = JSON.parse(fs.readFileSync("cli/wrangler.jsonc", "utf8").replace(/^\s*\/\/.*$/gm, "")); delete cfg.routes; if (cfg.env?.preview) delete cfg.env.preview.routes; if (JSON.stringify(cfg).includes("critique.work")) throw new Error("derived config still references critique.work"); fs.writeFileSync("cli/wrangler.selfhost.json", JSON.stringify(cfg, null, 2));'
 
 # Trim CLI-only packages the worker never imports (opentui TUI, tree-sitter
 # highlighting, PDF/OG rendering, test tooling, type-only packages). ~240MB.
 # Trimming here, before the runtime COPY, keeps the deleted bytes out of the
-# final image. If an upstream change makes the worker import one of these,
-# the container fails loudly with "Cannot find module" — delete that entry
-# from the list.
-RUN cd node_modules/.bun && rm -rf typescript@* @cloudflare+workers-types@* @opentuah+* tree-sitter* web-tree-sitter@* three@* bun-webgpu@* @img+* sharp@* core-js@* react-devtools-core@* planck@* prettier@* pdfkit@* tuistory@* calldiff@* goke@* @agentclientprotocol+sdk@* @parcel+watcher* ghostty-opentui@* jimp@* @jimp+* stage-js@* yoga-layout@*
+# final image. Eagerly-imported misses fail at container start; lazily imported
+# ones (e.g. miniflare's unused sharp/images path) would only surface if that
+# feature is used — if either happens, delete the entry from the list.
+RUN cd node_modules/.bun && rm -rf typescript@* @cloudflare+workers-types@* @opentuah+* tree-sitter* web-tree-sitter@* three@* bun-webgpu* @img+* sharp@* core-js@* react-devtools-core@* planck@* prettier@* pdfkit@* tuistory@* calldiff@* goke@* @agentclientprotocol+sdk@* @parcel+watcher* ghostty-opentui@* jimp@* @jimp+* stage-js@* yoga-layout@*
 
 # --- runtime stage: plain Node, because `wrangler dev` hangs when run by bun ---
 FROM node:22-slim
