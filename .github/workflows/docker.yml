@@ -112,7 +112,7 @@ jobs:
         working-directory: /tmp/digests
         run: |
           tags=$(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON")
-          sources=$(printf 'ghcr.io/%s@sha256:%s ' "${{ github.repository }}" *)
+          sources=$(printf "ghcr.io/${{ github.repository }}@sha256:%s " *)
           echo "tags: $tags"
           echo "sources: $sources"
           set +e
