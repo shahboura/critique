@@ -1,0 +1,24 @@
+# Keep the build context small and out of local state / secrets.
+.git
+node_modules
+**/node_modules
+.wrangler
+**/.wrangler
+.env
+.env.*
+!.env.example
+.dev.vars*
+.envrc
+.npmrc
+*.pem
+*.key
+tmp
+opensrc
+test-repo
+coverage
+dist
+**/dist
+*.log
+critique-screenshot.png
+screenshot.png
+screenshot-web.png

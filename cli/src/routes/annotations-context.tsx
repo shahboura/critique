@@ -8,6 +8,7 @@ import { checkDiffAccess, DIFF_ID_REGEX, PASSWORD_HEADER } from "../diff-passwor
 
 type Bindings = {
   CRITIQUE_KV: KVNamespace
+  PUBLIC_URL?: string
   CommentRoom: {
     idFromName(name: string): { toString(): string }
     get(id: { toString(): string }): {
@@ -101,7 +102,7 @@ route.get("/v/:id/annotations", async (c) => {
   const resp = await stub.fetch(req)
   const annotations = (await resp.json()) as AnnotationData[]
 
-  const origin = new URL(c.req.url).origin
+  const origin = (c.env.PUBLIC_URL || new URL(c.req.url).origin).replace(/\/+$/, "")
   const diffUrl = `${origin}/v/${id}`
   const markdown = generateMarkdown(annotations, diffUrl)
 

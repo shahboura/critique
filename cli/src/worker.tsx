@@ -146,7 +146,8 @@ function requireEnv(value: string | undefined, name: string): string {
 }
 
 function getPublicUrl(c: { req: { url: string }; env: Bindings }): string {
-  return c.env.PUBLIC_URL || new URL(c.req.url).origin
+  // Trim a trailing slash so generated links never contain "//".
+  return (c.env.PUBLIC_URL || new URL(c.req.url).origin).replace(/\/+$/, "")
 }
 
 function safeJsonParse<T>(value: string | null): T | null {
@@ -487,7 +488,7 @@ app.post("/upload", async (c) => {
       ? generateProtectedId()
       : toHex(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(body.html))).slice(0, 32)
 
-    const url = new URL(c.req.url)
+    const origin = getPublicUrl(c)
 
     const licenseKey = c.req.header(LICENSE_HEADER)
     const ownerSecret = c.req.header(OWNER_SECRET_HEADER)
@@ -518,7 +519,7 @@ app.post("/upload", async (c) => {
     // Always inject OG tags with the deterministic URL.
     // The image may arrive later via PATCH /upload/:id/og —
     // the URL will already be correct in the stored HTML.
-    const ogImageUrl = password ? undefined : `${url.origin}/og/${id}.png`
+    const ogImageUrl = password ? undefined : `${origin}/og/${id}.png`
     const title = extractTitle(body.html)
     const htmlDesktop = ogImageUrl ? injectOgTags(body.html, ogImageUrl, title) : body.html
     const htmlMobile = body.htmlMobile && ogImageUrl
@@ -538,7 +539,7 @@ app.post("/upload", async (c) => {
       await kv.setPatch(id, body.patch, ttlSeconds)
     }
 
-    const viewUrl = `${url.origin}/v/${id}`
+    const viewUrl = `${origin}/v/${id}`
 
     return c.json({
       id,
@@ -595,8 +596,7 @@ app.patch("/upload/:id/og", async (c) => {
     }
     await kv.setOgImage(id, bytes.buffer, ttlSeconds)
 
-    const url = new URL(c.req.url)
-    return c.json({ ogImageUrl: `${url.origin}/og/${id}.png` })
+    return c.json({ ogImageUrl: `${getPublicUrl(c)}/og/${id}.png` })
   } catch (error) {
     return c.json({ error: "Failed to update OG image" }, 500)
   }
@@ -852,7 +852,7 @@ async function handleView(c: any) {
   if (!version && isMobileDevice(c)) {
     const url = new URL(c.req.url)
     url.searchParams.set("v", "mobile")
-    return c.redirect(url.toString(), 302)
+    return c.redirect(new URL(url.pathname + url.search, getPublicUrl(c)).toString(), 302)
   }
 
   const access = await checkDiffAccess(c, id)
@@ -887,7 +887,7 @@ async function handleView(c: any) {
   // to choke on style recalculation. Small diffs load fine with it.
   if (html.length < 1_000_000) {
     const userId = c.get("userId") || "anonymous"
-    const origin = new URL(c.req.url).origin
+    const origin = getPublicUrl(c)
     // Escape < to \u003c to prevent XSS via </script> sequences in JSON values
     const configJson = JSON.stringify({
       endpoint: origin + "/a",

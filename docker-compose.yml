@@ -1,0 +1,44 @@
+# Self-hosted critique web service — see Dockerfile.
+#
+# TLS and your domain live in your reverse proxy. Point the proxy at this
+# service (http://127.0.0.1:8787 on the host, or http://critique:8787 when the
+# proxy runs in Docker on the same network) and set PUBLIC_URL.
+# Prefer compose over a bare `docker run`: it wires the /data volume that
+# holds all uploaded diffs and comments.
+#
+# nginx users: comments stream over SSE and uploads can be large — for the
+# /a/ and /upload locations add
+#   proxy_buffering off;
+#   proxy_read_timeout 1h;
+#   client_max_body_size 50m;
+# Caddy and Traefik need no extra configuration.
+services:
+  critique:
+    # Building locally (default) — or use the image this repo's CI pushes to
+    # GHCR: remove `build: .` and set
+    #   image: ghcr.io/<your-github-user>/critique:latest
+    build: .
+    image: critique-selfhost
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8787:8787"
+    environment:
+      # Public origin for returned links, og:image tags and the comments
+      # widget endpoint: https://diff.example.com (bare origin, no path).
+      # Required when serving over https — an http origin gets the comments
+      # widget blocked as mixed content. Can live in a .env file next to this
+      # file; do not reuse the upstream value shipped in .env.example.
+      PUBLIC_URL: ${PUBLIC_URL:-}
+    # Harmless hardening for a network-facing container.
+    cap_drop: ["ALL"]
+    security_opt: ["no-new-privileges:true"]
+    volumes:
+      # Uploaded diffs (KV) and comments (Durable Objects) persist here.
+      # Links expire after 7 days (permanent links need a license key from
+      # upstream); comment data accumulates slowly and the volume can be
+      # pruned once old diffs no longer matter. It contains your diffs, so
+      # treat backups as sensitive.
+      - critique-data:/data
+
+volumes:
+  critique-data:
