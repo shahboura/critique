@@ -4,7 +4,9 @@
 #
 # Multi-arch (linux/amd64 + linux/arm64) on native runners — no QEMU, because
 # bun crashes under emulation. Each arch builds separately and pushes by
-# digest; the merge job assembles the multi-arch manifest.
+# digest; the merge job assembles the multi-arch manifest. Runners are pinned
+# to explicit images (ubuntu-26.04 / ubuntu-26.04-arm) so the floating
+# ubuntu-latest migration cannot change the environment silently.
 #
 # Tags: `latest` on the default branch, the git tag on version tags, plus a
 # short sha tag for every build. Adjust the tag glob if your release tags are
@@ -34,9 +36,9 @@ jobs:
       matrix:
         include:
           - platform: linux/amd64
-            runner: ubuntu-latest
+            runner: ubuntu-26.04
           - platform: linux/arm64
-            runner: ubuntu-24.04-arm
+            runner: ubuntu-26.04-arm
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 30
     steps:
