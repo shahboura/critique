@@ -2,8 +2,8 @@
 # Container Registry, so a server can `docker compose pull` instead of
 # building: image is ghcr.io/<owner>/<repo> (e.g. your fork's owner/repo).
 #
-# Multi-arch (linux/amd64 + linux/arm64) on native runners — no QEMU, because
-# bun crashes under emulation. Each arch builds separately and pushes by
+# Multi-arch (linux/amd64 + linux/arm64) on native runners (faster and more
+# reliable than QEMU emulation). Each arch builds separately and pushes by
 # digest; the merge job assembles the multi-arch manifest. Runners are pinned
 # to explicit images (ubuntu-26.04 / ubuntu-26.04-arm) so the floating
 # ubuntu-latest migration cannot change the environment silently.

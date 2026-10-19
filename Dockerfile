@@ -22,6 +22,13 @@ FROM oven/bun:1.4.3 AS build
 ENV WRANGLER_SEND_METRICS=false WRANGLER_SEND_ERROR_REPORTS=false WRANGLER_HIDE_BANNER=true DO_NOT_TRACK=1 CI=1
 WORKDIR /app
 
+# arm64 has no prebuilt binary for tree-sitter-typescript, so `bun install`
+# falls back to node-gyp; give it Python + a C toolchain (build stage only,
+# x64 doesn't need it since a prebuild exists there).
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends python3 make g++ \
+    && rm -rf /var/lib/apt/lists/*
+
 # Manifests first, so dependency install is cached when only source changes.
 COPY package.json bun.lock ./
 COPY cli/package.json cli/package.json
