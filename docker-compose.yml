@@ -19,7 +19,7 @@
 services:
   critique:
     # Building locally (default) — or use the image this repo's CI pushes to
-    # GHCR: remove `build: .` and set
+    # GHCR (linux/amd64 + linux/arm64): remove `build: .` and set
     #   image: ghcr.io/<your-github-user>/critique:latest
     build: .
     image: critique-selfhost

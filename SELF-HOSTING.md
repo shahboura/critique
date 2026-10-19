@@ -120,8 +120,9 @@ git clone <your-fork> && docker compose up -d --build
 docker build -t critique-selfhost . && \
   docker save critique-selfhost | ssh server 'docker load'
 
-# c) registry — CI builds and pushes on every push to main
-#    image: ghcr.io/<your-github-user>/critique:latest  (amd64 + arm64)
+# c) registry — CI builds and pushes on every push to main (native
+#    linux/amd64 + linux/arm64 runners, multi-arch manifest)
+#    image: ghcr.io/<your-github-user>/critique:latest
 #    first push creates a private package; flip it to public in the
 #    package settings if you want anonymous pulls.
 #    Then in docker-compose.yml:  delete `build: .` and set the image line.

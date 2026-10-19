@@ -2,10 +2,14 @@
 # Container Registry, so a server can `docker compose pull` instead of
 # building: image is ghcr.io/<owner>/<repo> (e.g. your fork's owner/repo).
 #
+# Multi-arch (linux/amd64 + linux/arm64) on native runners — no QEMU, because
+# bun crashes under emulation. Each arch builds separately and pushes by
+# digest; the merge job assembles the multi-arch manifest.
+#
 # Tags: `latest` on the default branch, the git tag on version tags, plus a
 # short sha tag for every build. Adjust the tag glob if your release tags are
-# not v*. First push creates a private package — set it public in the package
-# settings if you want anonymous pulls.
+# not v* / critique@*. First push creates a private package — set it public in
+# the package settings if you want anonymous pulls.
 
 name: container
 
@@ -24,14 +28,66 @@ permissions:
   packages: write
 
 jobs:
-  build-push:
-    runs-on: ubuntu-latest
-    # arm64 is built under QEMU emulation, so give the job room.
-    timeout-minutes: 45
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux/amd64
+            runner: ubuntu-latest
+          - platform: linux/arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
     steps:
+      - name: Prepare platform pair
+        run: |
+          platform=${{ matrix.platform }}
+          echo "PLATFORM_PAIR=${platform//\//-}" >> "$GITHUB_ENV"
+
       - uses: actions/checkout@v4
 
-      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: ${{ matrix.platform }}
+          outputs: type=image,name=ghcr.io/${{ github.repository }},push-by-digest=true,name-canonical=true,push=true
+          cache-from: type=gha,scope=${{ env.PLATFORM_PAIR }}
+          cache-to: type=gha,mode=max,scope=${{ env.PLATFORM_PAIR }}
+
+      - name: Export digest
+        run: |
+          mkdir -p /tmp/digests
+          touch "/tmp/digests/${DIGEST#sha256:}"
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: digests-${{ env.PLATFORM_PAIR }}
+          path: /tmp/digests/*
+          if-no-files-found: error
+          retention-days: 1
+
+  merge:
+    runs-on: ubuntu-latest
+    needs: build
+    timeout-minutes: 15
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: /tmp/digests
+          pattern: digests-*
+          merge-multiple: true
 
       - uses: docker/setup-buildx-action@v3
 
@@ -50,12 +106,12 @@ jobs:
             type=sha,format=short
             type=ref,event=tag
 
-      - uses: docker/build-push-action@v6
-        with:
-          context: .
-          platforms: linux/amd64,linux/arm64
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+      - name: Create multi-arch manifest
+        working-directory: /tmp/digests
+        run: |
+          docker buildx imagetools create \
+            $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
+            $(printf 'ghcr.io/%s@sha256:%s ' "${{ github.repository }}" *)
+
+      - name: Inspect manifest
+        run: docker buildx imagetools inspect ghcr.io/${{ github.repository }}:${{ steps.meta.outputs.version }}
