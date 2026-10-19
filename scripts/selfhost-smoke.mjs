@@ -9,7 +9,8 @@
 // generated URL must use it. Without it, URLs must use the request origin.
 // In both modes nothing may leak "critique.work". Exits 0 when all checks pass.
 // Note: EXPECT_PUB only changes the assertions when the public origin differs
-// from CRITIQUE_URL.
+// from CRITIQUE_URL. Creates one short-lived test diff + one comment on the
+// target instance, so prefer a throwaway instance for re-runs.
 
 const BASE = (process.env.CRITIQUE_URL || "http://127.0.0.1:8787").replace(/\/+$/, "")
 const EXPECT_PUB = process.env.EXPECT_PUB ? process.env.EXPECT_PUB.replace(/\/+$/, "") : null
@@ -87,7 +88,9 @@ r = await fetch(`${BASE}/v/${up2.id}/unlock`, {
   redirect: "manual",
 })
 ok("password unlock", r.status === 303)
-const cookie = (r.headers.getSetCookie?.() || []).map((c) => c.split(";")[0]).join("; ")
+const setCookies = r.headers.getSetCookie?.() || []
+ok("unlock cookie is Secure", setCookies.some((c) => /;\s*secure/i.test(c)))
+const cookie = setCookies.map((c) => c.split(";")[0]).join("; ")
 r = await fetch(`${BASE}/v/${up2.id}`, { headers: { cookie }, redirect: "manual" })
 ok("unlocked view", r.status === 200)
 

@@ -5,6 +5,9 @@
 # proxy runs in Docker on the same network) and set PUBLIC_URL.
 # Prefer compose over a bare `docker run`: it wires the /data volume that
 # holds all uploaded diffs and comments.
+# If the proxy runs in Docker, put both on a dedicated network shared only
+# with the proxy: the worker's local dev server also opens internal helper
+# ports besides 8787.
 #
 # nginx users: comments stream over SSE and uploads can be large — for the
 # /a/ and /upload locations add

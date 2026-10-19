@@ -40,6 +40,10 @@ RUN test -f cli/node_modules/wrangler/bin/wrangler.js
 
 COPY . .
 
+# Never bake local secrets into the published image (defense in depth: the
+# .dockerignore patterns already exclude them).
+RUN test -z "$(find . -name '.env*' -not -path '*/node_modules/*' -not -name '*.example' -print -quit)"
+
 # Build the two gitignored artifacts the worker needs:
 #  - cli/public/agentation-widget.js  comments widget (static asset)
 #  - comments-server/dist             CommentRoom Durable Object
@@ -60,10 +64,16 @@ RUN bun -e 'import fs from "node:fs"; const cfg = JSON.parse(fs.readFileSync("cl
 RUN cd node_modules/.bun && rm -rf typescript@* @cloudflare+workers-types@* @opentuah+* tree-sitter* web-tree-sitter@* three@* bun-webgpu* @img+* sharp@* core-js@* react-devtools-core@* planck@* prettier@* pdfkit@* tuistory@* calldiff@* goke@* @agentclientprotocol+sdk@* @parcel+watcher* ghostty-opentui@* jimp@* @jimp+* stage-js@* yoga-layout@*
 
 # --- runtime stage: plain Node, because `wrangler dev` hangs when run by bun ---
-FROM node:22-slim
+FROM node:26-slim
 ENV WRANGLER_SEND_METRICS=false WRANGLER_SEND_ERROR_REPORTS=false WRANGLER_HIDE_BANNER=true DO_NOT_TRACK=1 CI=1
 WORKDIR /app
-COPY --from=build /app /app
+# node-owned so wrangler/miniflare can create their scratch dirs
+# (node_modules/.mf, bundler temp) as the unprivileged user.
+COPY --chown=node:node --from=build /app /app
+
+# Unprivileged runtime user; a fresh named volume inherits /data's ownership.
+RUN chmod 755 docker-entrypoint.sh && mkdir -p /data && chown node:node /data
+USER node
 
 EXPOSE 8787
 VOLUME /data
@@ -73,4 +83,4 @@ VOLUME /data
 # https://diff.example.com — a bare scheme://host, no path. Without it, links
 # fall back to the request Host header (http). KV + comments data persist
 # under /data.
-CMD ["sh", "-c", "exec node cli/node_modules/wrangler/bin/wrangler.js dev -c cli/wrangler.selfhost.json --ip 0.0.0.0 --port 8787 --persist-to /data ${PUBLIC_URL:+--var \"PUBLIC_URL:$PUBLIC_URL\"}"]
+CMD ["/app/docker-entrypoint.sh"]

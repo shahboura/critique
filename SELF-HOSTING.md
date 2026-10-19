@@ -80,7 +80,9 @@ labels:
 ```
 
 If the proxy runs in Docker on the same network, delete the `ports:` mapping and
-point the proxy at `http://critique:8787` instead.
+point the proxy at `http://critique:8787` instead; keep the worker on a network
+shared only with the proxy (its local dev server opens internal helper ports
+besides 8787).
 
 ## 4. Configuration
 
@@ -150,8 +152,10 @@ git pull upstream main && docker compose build && docker compose up -d
   check suppressed, `DO_NOT_TRACK=1`. The worker itself has no outbound calls.
 - **No secrets in the image**: `.dockerignore` excludes `.env*`, `*/.dev.vars*`,
   `*.pem`, `*.key` — safe to push the image to a registry.
-- compose runs the container with `cap_drop: ["ALL"]` and
-  `no-new-privileges`; it runs as root inside, which is fine for this workload.
+- compose runs the container as the unprivileged `node` user with
+  `cap_drop: ["ALL"]` and `no-new-privileges`. If you migrate an existing
+  root-owned `critique-data` volume from an older image, fix ownership once:
+  `docker run --rm -v critique-data:/data alpine chown -R 1000:1000 /data`.
 - Password-protected diffs set a `Secure` cookie: they need https (or
   localhost). Over plain http a browser silently drops it and the lock page
   re-appears.
