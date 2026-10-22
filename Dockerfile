@@ -61,7 +61,7 @@ RUN bun -e 'import fs from "node:fs"; const cfg = JSON.parse(fs.readFileSync("cl
 # final image. Eagerly-imported misses fail at container start; lazily imported
 # ones (e.g. miniflare's unused sharp/images path) would only surface if that
 # feature is used — if either happens, delete the entry from the list.
-RUN cd node_modules/.bun && rm -rf typescript@* @cloudflare+workers-types@* @opentuah+* tree-sitter* web-tree-sitter@* three@* bun-webgpu* @img+* sharp@* core-js@* react-devtools-core@* planck@* prettier@* pdfkit@* tuistory@* calldiff@* goke@* @agentclientprotocol+sdk@* @parcel+watcher* ghostty-opentui@* jimp@* @jimp+* stage-js@* yoga-layout@*
+RUN cd node_modules/.bun && rm -rf typescript@* @cloudflare+workers-types@* @opentuah+* tree-sitter* web-tree-sitter@* three@* bun-webgpu* @img+* sharp@* core-js@* react-devtools-core@* planck@* prettier@* pdfkit@* tuistory@* calldiff@* goke@* @agentclientprotocol+sdk@* @parcel+watcher* ghostty-opentui@* jimp@* @jimp+* stage-js@* yoga-layout@* kill-port-process@* pid-from-port@* execa@0.9.0* cross-spawn@5.1.0* file-type@16* diff@8.0.2*
 
 # --- runtime stage: plain Node, because `wrangler dev` hangs when run by bun ---
 FROM node:26-slim
@@ -70,6 +70,17 @@ WORKDIR /app
 # node-owned so wrangler/miniflare can create their scratch dirs
 # (node_modules/.mf, bundler temp) as the unprivileged user.
 COPY --chown=node:node --from=build /app /app
+
+# npm ships inside the base image and is never invoked at runtime (the entrypoint
+# runs node directly); its bundled node_modules are the only app-unrelated
+# packages scanners still flag in this layer.
+RUN rm -rf /usr/local/lib/node_modules/npm /usr/local/bin/npm /usr/local/bin/npx
+
+# node:26-slim ships without a CA bundle, and workerd refuses to start without
+# one ("service internet: TLS configuration: ... No CA certificates").
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
 
 # Unprivileged runtime user; a fresh named volume inherits /data's ownership.
 RUN chmod 755 docker-entrypoint.sh && mkdir -p /data && chown node:node /data

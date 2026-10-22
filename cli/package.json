@@ -40,7 +40,7 @@
     "stripe": "^20.2.0",
     "tuistory": "^0.0.13",
     "typescript": "^5.9.3",
-    "wrangler": "^4.19.1"
+    "wrangler": "^4.151.3"
   },
   "dependencies": {
     "@agentclientprotocol/sdk": "^0.13.1",
