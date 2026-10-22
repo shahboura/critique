@@ -12,6 +12,9 @@
 # short sha tag for every build. Adjust the tag glob if your release tags are
 # not v* / critique@*. First push creates a private package — set it public in
 # the package settings if you want anonymous pulls.
+#
+# Docker Hub is optional: set the DOCKERHUB_USERNAME / DOCKERHUB_TOKEN secrets
+# and the merge job also mirrors the tags to docker.io/<username>/critique.
 
 name: container
 
@@ -63,6 +66,9 @@ jobs:
           context: .
           platforms: ${{ matrix.platform }}
           outputs: type=image,name=ghcr.io/${{ github.repository }},push-by-digest=true,name-canonical=true,push=true
+          # `provenance: true` means mode=min and would override the public-repo mode=max default
+          provenance: mode=max
+          sbom: true
           cache-from: type=gha,scope=${{ env.PLATFORM_PAIR }}
           cache-to: type=gha,mode=max,scope=${{ env.PLATFORM_PAIR }}
 
@@ -98,9 +104,14 @@ jobs:
           retention-days: 1
 
   merge:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     needs: build
     timeout-minutes: 15
+    env:
+      # optional Docker Hub mirror: skipped unless both are set (secrets cannot be
+      # used in `if:`, so they are exposed here; both actions below are SHA-pinned)
+      DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+      DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
     steps:
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
@@ -115,6 +126,13 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
+        if: env.DOCKERHUB_USERNAME != '' && env.DOCKERHUB_TOKEN != ''
+        with:
+          registry: docker.io
+          username: ${{ env.DOCKERHUB_USERNAME }}
+          password: ${{ env.DOCKERHUB_TOKEN }}
 
       - id: meta
         uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5.10.0
@@ -148,6 +166,17 @@ jobs:
             echo "::error::imagetools create exit $code | tags=[$tags] | sources=[$sources] | $msg"
             exit 1
           fi
+
+      - name: Mirror the manifest to Docker Hub
+        if: env.DOCKERHUB_USERNAME != '' && env.DOCKERHUB_TOKEN != ''
+        working-directory: /tmp/digests
+        run: |
+          tags=$(jq -cr --arg dh "docker.io/$DOCKERHUB_USERNAME/critique" \
+            '.tags | map(sub("^ghcr\\.io/[^:]+"; $dh)) | map("-t " + .) | join(" ")' \
+            <<< "$DOCKER_METADATA_OUTPUT_JSON")
+          sources=$(printf "ghcr.io/${{ github.repository }}@sha256:%s " *)
+          echo "tags: $tags"
+          docker buildx imagetools create $tags $sources
 
       - name: Inspect manifest
         run: docker buildx imagetools inspect ghcr.io/${{ github.repository }}:${{ steps.meta.outputs.version }}
