@@ -84,3 +84,8 @@ VOLUME /data
 # fall back to the request Host header (http). KV + comments data persist
 # under /data.
 CMD ["/app/docker-entrypoint.sh"]
+
+# Liveness for Docker/orchestrators: the app-level health endpoint used by the
+# comments API. `docker compose ps` reports healthy/unhealthy from this.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
+  CMD node -e "fetch('http://127.0.0.1:8787/a/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
