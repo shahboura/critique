@@ -22,18 +22,16 @@ FROM oven/bun:1.4.3 AS build
 ENV WRANGLER_SEND_METRICS=false WRANGLER_SEND_ERROR_REPORTS=false WRANGLER_HIDE_BANNER=true DO_NOT_TRACK=1 CI=1
 WORKDIR /app
 
-# arm64 has no prebuilt binary for tree-sitter-typescript, so `bun install`
-# falls back to node-gyp; give it Python + a C toolchain (build stage only,
-# x64 doesn't need it since a prebuild exists there).
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends python3 make g++ \
-    && rm -rf /var/lib/apt/lists/*
-
 # Manifests first, so dependency install is cached when only source changes.
 COPY package.json bun.lock ./
 COPY cli/package.json cli/package.json
 COPY comments-server/package.json comments-server/package.json
-RUN bun install
+# Skip lifecycle scripts: every package in this image that would compile a native
+# binding (tree-sitter grammars, node-pty, sharp, @parcel/watcher) is trimmed
+# below anyway, and Bun's arm64 node-gyp fallback downloads `node-gyp@latest`
+# during install, which flakes in CI. esbuild uses its prebuilt optional package,
+# and workerd's bin is a JS launcher that resolves @cloudflare/workerd-<platform>.
+RUN bun install --ignore-scripts
 
 # Fail fast if a future lockfile bump moves wrangler's entry point (used by CMD).
 RUN test -f cli/node_modules/wrangler/bin/wrangler.js
@@ -61,7 +59,7 @@ RUN bun -e 'import fs from "node:fs"; const cfg = JSON.parse(fs.readFileSync("cl
 # final image. Eagerly-imported misses fail at container start; lazily imported
 # ones (e.g. miniflare's unused sharp/images path) would only surface if that
 # feature is used — if either happens, delete the entry from the list.
-RUN cd node_modules/.bun && rm -rf typescript@* @cloudflare+workers-types@* @opentuah+* tree-sitter* web-tree-sitter@* three@* bun-webgpu* @img+* sharp@* core-js@* react-devtools-core@* planck@* prettier@* pdfkit@* tuistory@* calldiff@* goke@* @agentclientprotocol+sdk@* @parcel+watcher* ghostty-opentui@* jimp@* @jimp+* stage-js@* yoga-layout@* kill-port-process@* pid-from-port@* execa@0.9.0* cross-spawn@5.1.0* file-type@16* diff@8.0.2*
+RUN cd node_modules/.bun && rm -rf typescript@* @cloudflare+workers-types@* @opentuah+* tree-sitter* web-tree-sitter@* three@* bun-webgpu* @img+* sharp@* core-js@* react-devtools-core@* planck@* prettier@* pdfkit@* tuistory@* calldiff@* goke@* @agentclientprotocol+sdk@* @parcel+watcher* ghostty-opentui@* jimp@* @jimp+* stage-js@* yoga-layout@* kill-port-process@* pid-from-port@* execa@0.9.0* cross-spawn@5.1.0* file-type@16* diff@8.0.2* node-pty@*
 
 # --- runtime stage: plain Node, because `wrangler dev` hangs when run by bun ---
 FROM node:26-slim
