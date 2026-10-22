@@ -156,8 +156,10 @@ git pull upstream main && docker compose build && docker compose up -d
 - **No secrets in the image**: `.dockerignore` excludes `.env*`, `*/.dev.vars*`,
   `*.pem`, `*.key` — safe to push the image to a registry.
 - compose runs the container as the unprivileged `node` user. If you migrate an
-  existing root-owned `critique-data` volume from an older image, fix ownership
-  once: `docker run --rm -v critique-data:/data alpine chown -R 1000:1000 /data`.
+  existing `critique-data` volume from an image that ran as root, re-own it once
+  (compose prefixes the volume with the project name, so address it through
+  compose rather than a bare `docker run -v critique-data`):
+  `docker compose run --rm --user root --entrypoint chown critique -R node:node /data`.
 - Password-protected diffs set a `Secure` cookie: they need https (or
   localhost). Over plain http a browser silently drops it and the lock page
   re-appears.
@@ -172,4 +174,5 @@ git pull upstream main && docker compose build && docker compose up -d
 | Upload fails with 413 | proxy body limit | `client_max_body_size 50m` |
 | Password page loops | http + `Secure` cookie | use https (or localhost) |
 | Diff 404 after ~a week | intended 7-day expiry | permanent links need a license key from upstream |
+| Container restarts, logs `EACCES ... /data` | `/data` volume was created by an image that ran as root | `docker compose run --rm --user root --entrypoint chown critique -R node:node /data` |
 | Everything 404s under a sub-path | sub-path hosting not supported | serve at a (sub)domain root |
