@@ -2394,8 +2394,8 @@ cli
         title,
         open: options.open,
         json: options.json,
-        cols: parseInt(options.cols) || 240,
-        mobileCols: parseInt(options.mobileCols) || 100,
+        cols: parseInt(options.cols ?? '') || 240,
+        mobileCols: parseInt(options.mobileCols ?? '') || 100,
         theme: options.theme,
         callDiffByFile,
         commits,
@@ -2410,7 +2410,7 @@ cli
         filename,
         open: options.open,
         theme: options.theme,
-        cols: parseInt(options.cols) || undefined,
+        cols: parseInt(options.cols ?? '') || undefined,
         pageSize: options.pdfPageSize,
         callDiffByFile,
       });
@@ -2420,7 +2420,7 @@ cli
     if (options.image) {
       await runImageMode(cleanedDiff, {
         theme: options.theme,
-        cols: parseInt(options.cols) || 120,
+        cols: parseInt(options.cols ?? '') || 120,
         callDiffByFile,
       });
       return;
@@ -2428,7 +2428,7 @@ cli
 
     if (options.scrollback || options.stdin || !process.stdout.isTTY) {
       // For scrollback, prefer terminal width over --cols default (240 is for web)
-      const scrollbackCols = process.stdout.columns || parseInt(options.cols) || 120;
+      const scrollbackCols = process.stdout.columns || parseInt(options.cols ?? '') || 120;
       await runScrollbackMode(cleanedDiff, {
         theme: options.theme,
         cols: scrollbackCols,
@@ -3039,8 +3039,8 @@ cli
     await runWebMode(cleanedDiff, {
       title: options.title,
       open: options.open,
-      cols: parseInt(options.cols) || 240,
-      mobileCols: parseInt(options.mobileCols) || 100,
+      cols: parseInt(options.cols ?? '') || 240,
+      mobileCols: parseInt(options.mobileCols ?? '') || 100,
       theme: options.theme,
       commits,
       password: options.password,
