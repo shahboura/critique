@@ -20,6 +20,9 @@ CRITIQUE_URL=https://diff.example.com EXPECT_PUB=https://diff.example.com \
   node scripts/selfhost-smoke.mjs
 ```
 
+The image ships a Docker `HEALTHCHECK` (polls `GET /a/health`), so
+`docker compose ps` shows `healthy` once the server is up.
+
 Point the CLI at your instance, otherwise uploads still go to critique.work:
 
 ```bash
