@@ -155,10 +155,9 @@ git pull upstream main && docker compose build && docker compose up -d
   check suppressed, `DO_NOT_TRACK=1`. The worker itself has no outbound calls.
 - **No secrets in the image**: `.dockerignore` excludes `.env*`, `*/.dev.vars*`,
   `*.pem`, `*.key` — safe to push the image to a registry.
-- compose runs the container as the unprivileged `node` user with
-  `cap_drop: ["ALL"]` and `no-new-privileges`. If you migrate an existing
-  root-owned `critique-data` volume from an older image, fix ownership once:
-  `docker run --rm -v critique-data:/data alpine chown -R 1000:1000 /data`.
+- compose runs the container as the unprivileged `node` user. If you migrate an
+  existing root-owned `critique-data` volume from an older image, fix ownership
+  once: `docker run --rm -v critique-data:/data alpine chown -R 1000:1000 /data`.
 - Password-protected diffs set a `Secure` cookie: they need https (or
   localhost). Over plain http a browser silently drops it and the lock page
   re-appears.

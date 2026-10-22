@@ -36,9 +36,6 @@ services:
       # widget blocked as mixed content. Can live in a .env file next to this
       # file; do not reuse the upstream value shipped in .env.example.
       PUBLIC_URL: ${PUBLIC_URL:-}
-    # Harmless hardening for a network-facing container.
-    cap_drop: ["ALL"]
-    security_opt: ["no-new-privileges:true"]
     volumes:
       # Uploaded diffs (KV) and comments (Durable Objects) persist here.
       # Links expire after 7 days (permanent links need a license key from
