@@ -66,11 +66,12 @@ jobs:
           context: .
           platforms: ${{ matrix.platform }}
           outputs: type=image,name=ghcr.io/${{ github.repository }},push-by-digest=true,name-canonical=true,push=true
+          # No layer cache on purpose: a rebuild must never replay a dependency
+          # install, even though bun.lock already pins every version. Costs ~30s per arch.
+          no-cache: true
           # `provenance: true` means mode=min and would override the public-repo mode=max default
           provenance: mode=max
           sbom: true
-          cache-from: type=gha,scope=${{ env.PLATFORM_PAIR }}
-          cache-to: type=gha,mode=max,scope=${{ env.PLATFORM_PAIR }}
 
       - name: Smoke test the pushed image
         run: |
