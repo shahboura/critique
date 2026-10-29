@@ -511,7 +511,9 @@ export function buildAnchorMap(
   sections: Array<{ lineIndex: number; fileName: string }>,
 ): Map<number, { id: string; label: string }> {
   const anchors = new Map<number, { id: string; label: string }>()
-  const usedIds = new Set<string>()
+  // Reserve ids the document already uses so a file named e.g. "to.top"
+  // cannot hijack the scroll-to-top button or the content container.
+  const usedIds = new Set<string>(["content", "to-top"])
 
   for (const section of sections) {
     if (!Number.isFinite(section.lineIndex) || section.lineIndex < 0) continue

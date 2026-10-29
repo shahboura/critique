@@ -61,6 +61,14 @@ function rgbaToHexOrNull(rgba: RGBA): string | null {
 }
 
 /**
+ * Guard colors interpolated into CSS. Callers pass theme hex colors; anything
+ * else would silently produce a transparent or black page, so fall back.
+ */
+function cssColor(value: string, fallback: string): string {
+  return /^#[0-9a-f]{3}(?:[0-9a-f]{3})?$/i.test(value) ? value : fallback
+}
+
+/**
  * Build a CSS style key string from a span's visual properties.
  * Used as the dedup key for the class map.
  */
@@ -191,11 +199,14 @@ export function frameToHtml(frame: CapturedFrame, options: ToHtmlOptions = {}): 
  */
 export function frameToHtmlDocument(frame: CapturedFrame, options: ToHtmlOptions = {}): string {
   const {
-    backgroundColor = "#ffffff",
-    textColor = "#1a1a1a",
+    backgroundColor: rawBackgroundColor = "#ffffff",
+    textColor: rawTextColor = "#1a1a1a",
     fontFamily = "'JetBrains Mono Nerd', 'JetBrains Mono', 'Fira Code', Monaco, Menlo, 'Ubuntu Mono', Consolas, monospace",
     title = "Critique Diff",
   } = options
+
+  const backgroundColor = cssColor(rawBackgroundColor, "#ffffff")
+  const textColor = cssColor(rawTextColor, "#1a1a1a")
 
   const cols = frame.cols
   const { html: content, spanCss } = frameToHtml(frame, options)
@@ -350,14 +361,99 @@ export function frameToHtmlDocument(frame: CapturedFrame, options: ToHtmlOptions
         background: #cbd5e1;
       }
     }
+    /* Momentary action, so no selected state: rest, hover, focus-visible, pressed.
+       Surface = 10% of the theme text color over the page background. */
+    #to-top {
+      --to-top-fg: ${textColor};
+      --to-top-page-bg: ${backgroundColor};
+      position: fixed;
+      right: 20px;
+      bottom: 20px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 44px;
+      height: 44px;
+      padding: 0;
+      border: 1px solid rgba(128, 128, 128, 0.4);
+      border-color: color-mix(in srgb, var(--to-top-fg) 35%, var(--to-top-page-bg));
+      border-radius: 50%;
+      background: rgba(128, 128, 128, 0.12);
+      background: color-mix(in srgb, var(--to-top-fg) 10%, var(--to-top-page-bg));
+      color: var(--to-top-fg);
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+      cursor: pointer;
+      opacity: 0;
+      visibility: hidden;
+      transition: opacity 0.2s ease, visibility 0.2s ease, background-color 0.15s ease;
+      z-index: 1000;
+    }
+    #to-top.visible {
+      opacity: 1;
+      visibility: visible;
+    }
+    #to-top:hover {
+      background: color-mix(in srgb, var(--to-top-fg) 18%, var(--to-top-page-bg));
+    }
+    #to-top:focus-visible {
+      outline: 2px solid var(--to-top-fg);
+      outline-offset: 2px;
+    }
+    #to-top:active {
+      transform: scale(0.94);
+    }
+    /* Clear the agentation widget: 44px circle at 20px inset, bottom right */
+    body:has(#critique-agentation) #to-top {
+      bottom: 84px;
+    }
+    @media (prefers-reduced-motion: reduce) {
+      #to-top:active {
+        transform: none;
+      }
+    }
+    @media print {
+      #to-top {
+        display: none;
+      }
+    }
+    ${options.autoTheme ? html`
+    /* Light mode inverts #content over a white page, so flip the button too */
+    @media (prefers-color-scheme: light) {
+      #to-top {
+        --to-top-fg: #1a1a1a;
+        --to-top-page-bg: #ffffff;
+      }
+    }
+    ` : ''}
     ${options.extraCss || ''}
     ${spanCss}
     </style>
     </head>
     <body>
+    <button id="to-top" type="button" aria-label="Scroll to top"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 14l6-6 6 6"/></svg></button>
     <div id="content">
     ${content}
     </div>
+    <script>
+    // Scroll-to-top: show after scrolling most of a screen, smooth scroll back up.
+    (function () {
+      var btn = document.getElementById('to-top');
+      var limit = window.innerHeight * 0.75;
+      function update() {
+        btn.classList.toggle('visible', window.scrollY > limit);
+      }
+      window.addEventListener('scroll', update, { passive: true });
+      window.addEventListener('resize', function () {
+        limit = window.innerHeight * 0.75;
+        update();
+      });
+      btn.addEventListener('click', function () {
+        var reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+        window.scrollTo({ top: 0, behavior: reduce ? 'auto' : 'smooth' });
+      });
+      update();
+    })();
+    </script>
     <script>
     // Redirect mobile devices to ?v=mobile for optimized view
     (function() {

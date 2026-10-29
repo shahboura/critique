@@ -476,7 +476,7 @@ describe("tree links in rendered HTML", () => {
   })
 })
 
-describe("ansi-html extraCss and extraJs", () => {
+describe("ansi-html document", () => {
   test("extraCss is injected into document style block", () => {
     const frame = mockFrame(["test"])
     const doc = frameToHtmlDocument(frame, { extraCss: ".custom{color:red;}" })
@@ -491,6 +491,48 @@ describe("ansi-html extraCss and extraJs", () => {
     const frame = mockFrame(["test"])
     const doc = frameToHtmlDocument(frame, { extraJs: "console.log('hi')" })
     expect(doc).toContain("<script>\nconsole.log('hi')\n</script>")
+  })
+
+  test("scroll-to-top button is rendered with its styles and script", () => {
+    const frame = mockFrame(["test"])
+    const doc = frameToHtmlDocument(frame)
+    expect(doc).toContain('id="to-top"')
+    expect(doc).toContain('aria-label="Scroll to top"')
+    expect(doc).toContain("#to-top.visible")
+    expect(doc).toContain("#to-top:focus-visible")
+    expect(doc).toContain("getElementById('to-top')")
+    // Before #content so keyboard users reach it without tabbing through every
+    // file link, and outside #content because that gets inverted in light mode
+    expect(doc.indexOf('id="to-top"')).toBeLessThan(doc.indexOf('id="content"'))
+  })
+
+  test("scroll-to-top surfaces derive from the page colors", () => {
+    const frame = mockFrame(["test"])
+    const doc = frameToHtmlDocument(frame, { backgroundColor: "#0d1117", textColor: "#e6edf3" })
+    expect(doc).toContain("--to-top-fg: #e6edf3")
+    expect(doc).toContain("--to-top-page-bg: #0d1117")
+    expect(doc).toContain("color-mix(in srgb, var(--to-top-fg) 10%")
+  })
+
+  test("autoTheme overrides scroll-to-top colors for light mode", () => {
+    const frame = mockFrame(["test"])
+    const doc = frameToHtmlDocument(frame, {
+      backgroundColor: "#0d1117",
+      textColor: "#e6edf3",
+      autoTheme: true,
+    })
+    // Base colors first, light override after, so the cascade flips them
+    const base = doc.indexOf("--to-top-fg: #e6edf3")
+    const light = doc.indexOf("--to-top-fg: #1a1a1a")
+    expect(base).toBeGreaterThan(-1)
+    expect(light).toBeGreaterThan(base)
+  })
+
+  test("non-hex colors fall back instead of producing an empty page", () => {
+    const frame = mockFrame(["test"])
+    const doc = frameToHtmlDocument(frame, { backgroundColor: "rgb(1,2,3)", textColor: "var(--x)" })
+    expect(doc).toContain("background-color: #ffffff")
+    expect(doc).toContain("--to-top-fg: #1a1a1a")
   })
 
   test("mobile redirect preserves hash fragment", () => {
