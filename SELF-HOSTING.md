@@ -135,6 +135,8 @@ docker build --build-arg BUILD_ID=$(git rev-parse --short HEAD) \
 #    Then in docker-compose.yml:  remove the whole `build:` block and set the image line.
 ```
 
+Release tarballs are immutable: `critique-<version>.tgz` and its sha256 belong to one commit, and the release workflow refuses to republish an existing version. Pin the version you install.
+
 Both local build paths stamp the deployment's identity from `BUILD_ID`, which
 `/a/health` and every generated page report. `docker compose` reads it from the
 environment (`BUILD_ID=$(git rev-parse --short HEAD) docker compose up -d --build`);

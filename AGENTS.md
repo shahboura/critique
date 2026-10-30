@@ -74,7 +74,7 @@ Try to never use useEffect if possible. usually you can move logic directly in e
 
 ## changesets
 
-Add a `.changeset/*.md` file with each user-facing fix or feature instead of editing `CHANGELOG.md`. Nothing reads these files yet — they are release notes for the next release commit, not tooling input. Version bumps are still manual here (there is no `.changeset/config.json`), so releasing is: bump `cli/package.json`, commit, `git tag v<version>`, `git push --follow-tags`. The tag must equal `cli/package.json` — the `release` workflow enforces it, then publishes `critique-<version>.tgz` plus its sha256 as GitHub release assets. Nothing is published to npm; that package name belongs to a third party.
+Add a `.changeset/*.md` file with each user-facing fix or feature instead of editing `CHANGELOG.md`. Nothing reads these files yet — they are release notes for the next release commit, not tooling input. Version bumps are still manual here (there is no `.changeset/config.json`), so releasing is: bump `cli/package.json`, commit, `git tag v<version>`, `git push --follow-tags`. The tag must equal `cli/package.json` — the `release` workflow enforces it, then publishes `critique-<version>.tgz` plus its sha256 as GitHub release assets. Nothing is published to npm; that package name belongs to a third party. **A published version is immutable**: the workflow refuses to rebuild a tag that already has assets, and records the built commit in the release body, so a version always maps to one commit. To ship a change, bump the version — never move a tag. Protect `v*` tags with a repository ruleset (Settings → Rules → Tags) so a tag cannot be moved or deleted.
 
 ## zustand
 

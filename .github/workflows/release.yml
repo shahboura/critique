@@ -46,8 +46,11 @@ jobs:
         with:
           bun-version: 1.4.4
 
-      - name: Check the tag matches cli/package.json
+      - name: Check the tag matches cli/package.json and is not published
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
+          set -euo pipefail
           version=$(node -p "require('./cli/package.json').version")
           tag_version=${TAG#critique@}
           tag_version=${tag_version#v}
@@ -55,16 +58,25 @@ jobs:
             echo "::error::tag $TAG does not match cli/package.json version $version"
             exit 1
           fi
+          commit=$(git rev-parse HEAD)
+          # A published version maps to exactly one commit. Rebuilding it would
+          # mint different bytes under the same version, so this fails instead.
+          existing=$(curl -fsS \
+            -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/releases/tags/$TAG" 2>/dev/null) || existing=""
+          if printf '%s' "$existing" | grep -q "critique-$version.tgz"; then
+            echo "::error::$TAG is already published; cut a new version instead of rebuilding it"
+            exit 1
+          fi
           echo "VERSION=$version" >> "$GITHUB_ENV"
+          echo "COMMIT=$commit" >> "$GITHUB_ENV"
 
       - name: Install
         run: bun install --frozen-lockfile --ignore-scripts
 
       - name: Stamp the build id
-        # git, not $GITHUB_SHA: on workflow_dispatch that is the branch head, not
-        # the tag this job checked out.
         run: |
-          printf 'export const BUILD_ID: string = "%s"\n' "$(git rev-parse HEAD)" > cli/src/build-info.ts
+          printf 'export const BUILD_ID: string = "%s"\n' "$COMMIT" > cli/src/build-info.ts
 
       - name: Build and pack
         run: |
@@ -110,22 +122,24 @@ jobs:
           auth=(-H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json")
           die() { echo "::error::$1"; exit 1; }
 
-          # Reuse the release for this tag, or create it.
           release_json=$(curl -fsS "${auth[@]}" "$api/releases/tags/$TAG" 2>/dev/null) || release_json=""
-          if [ -z "$release_json" ]; then
+          if [ -n "$release_json" ]; then
+            # Only complete a release this same commit created; never replace a
+            # published asset. That is what keeps version -> commit immutable.
+            if ! printf '%s' "$release_json" | grep -q "$COMMIT"; then
+              die "$TAG was released from a different commit; cut a new version"
+            fi
+            if printf '%s' "$release_json" | grep -q "critique-$VERSION.tgz"; then
+              die "$TAG is already published; cut a new version"
+            fi
+            release_id=$(printf '%s' "$release_json" | python3 -c "import json,sys;print(json.load(sys.stdin)['id'])")
+          else
             release_json=$(curl -fsS "${auth[@]}" -X POST "$api/releases" \
               -H "Content-Type: application/json" \
-              -d "{\"tag_name\":\"$TAG\",\"name\":\"$TAG\",\"generate_release_notes\":true}") \
+              -d "{\"tag_name\":\"$TAG\",\"name\":\"$TAG\",\"body\":\"Built from commit $COMMIT. This version is immutable: publish a new version instead of rebuilding it.\",\"generate_release_notes\":true}") \
               || die "cannot create the release for $TAG"
+            release_id=$(printf '%s' "$release_json" | python3 -c "import json,sys;print(json.load(sys.stdin)['id'])")
           fi
-          release_id=$(printf '%s' "$release_json" | python3 -c "import json,sys;print(json.load(sys.stdin)['id'])")
-
-          # Drop assets with the same name so a re-run replaces instead of failing.
-          curl -fsS "${auth[@]}" "$api/releases/$release_id/assets" \
-            | python3 -c "import json,sys;[print(a['id']) for a in json.load(sys.stdin) if a['name'].startswith('critique-')]" \
-            | while read -r asset_id; do
-                curl -fsS "${auth[@]}" -X DELETE "$api/releases/assets/$asset_id" || die "cannot remove asset $asset_id"
-              done
 
           for file in "critique-$VERSION.tgz" "critique-$VERSION.tgz.sha256"; do
             curl -fsS "${auth[@]}" -X POST \
@@ -134,4 +148,4 @@ jobs:
               "https://uploads.github.com/repos/$GITHUB_REPOSITORY/releases/$release_id/assets?name=$file" \
               > /dev/null || die "cannot upload $file"
           done
-          echo "attached critique-$VERSION.tgz to $TAG"
+          echo "published critique-$VERSION.tgz from $COMMIT"
