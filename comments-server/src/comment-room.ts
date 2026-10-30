@@ -7,12 +7,13 @@
 // plus SSE streaming for real-time updates.
 
 import { Agent } from "agents"
-import type {
-  RoomState,
-  Annotation,
-  ThreadMessage,
-  AgentationEvent,
-  ActionRequestedPayload,
+import {
+  PATCHABLE_ANNOTATION_FIELDS,
+  type RoomState,
+  type Annotation,
+  type ThreadMessage,
+  type AgentationEvent,
+  type ActionRequestedPayload,
 } from "./types.js"
 
 interface CommentRoomEnv {
@@ -157,8 +158,15 @@ export class CommentRoom extends Agent<CommentRoomEnv, RoomState> {
       throw new Error(`Annotation ${id} not found`)
     }
 
+    // The public proxy already filters, but the DO is a trust boundary too:
+    // identity, session, thread and timestamps must not be client-writable.
+    const allowed = new Set<string>(PATCHABLE_ANNOTATION_FIELDS)
+    const patch = Object.fromEntries(
+      Object.entries(partial).filter(([key]) => allowed.has(key)),
+    ) as Partial<Annotation>
+
     const now = new Date().toISOString()
-    const updated: Annotation = { ...existing, ...partial, id, updatedAt: now }
+    const updated: Annotation = { ...existing, ...patch, id, updatedAt: now }
 
     this.sql`
       UPDATE annotations

@@ -497,7 +497,7 @@ function PageFeedbackToolbarForRoute({
     const seen = new Set<string>();
     return annotations.filter(annotation => {
       // A rejected upload can resolve with an empty body; never merge a row
-      // that has no id or comment.
+      // without an id.
       if (!annotation?.id) return false;
       const id = serverIds.current.get(annotation.id) ?? annotation.id;
       if (seen.has(id)) return false;

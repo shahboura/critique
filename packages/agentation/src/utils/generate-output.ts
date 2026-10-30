@@ -93,7 +93,7 @@ export function generateOutput(
       if (a.boundingBox) {
         output += `**Position:** x:${Math.round(a.boundingBox.x)}, y:${Math.round(a.boundingBox.y)} (${Math.round(a.boundingBox.width)}×${Math.round(a.boundingBox.height)}px)\n`;
       }
-      output += `**Annotation at:** ${a.x.toFixed(1)}% from left, ${Math.round(a.y)}px from top\n`;
+      output += `**Annotation at:** ${Number(a.x ?? 0).toFixed(1)}% from left, ${Math.round(a.y)}px from top\n`;
       if (a.selectedText) {
         output += `**Selected text:** "${oneLine(a.selectedText)}"\n`;
       }

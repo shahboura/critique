@@ -12,6 +12,7 @@ import type { Context } from "hono"
 import type { KVNamespace } from "@cloudflare/workers-types"
 import { checkDiffAccess, diffAccessGuard } from "./diff-password.js"
 import { BUILD_ID } from "./build-info.js"
+import { PATCHABLE_ANNOTATION_FIELDS as PATCHABLE_FIELDS } from "@critique.work/server/types"
 import { version as pkgVersion } from "../package.json"
 
 type Bindings = {
@@ -114,7 +115,10 @@ api.get("/sessions/:id", async (c) => {
 // Create annotation within a session
 api.post("/sessions/:id/annotations", async (c) => {
   const sessionId = c.req.param("id")
-  const body = await c.req.json<Record<string, unknown>>()
+  const body = await c.req.json<Record<string, unknown>>().catch(() => null)
+  if (!body || typeof body !== "object" || typeof body.comment !== "string") {
+    return c.json({ error: "Invalid annotation body" }, 400)
+  }
 
   // Prefix annotation ID with session ID for routing
   if (typeof body.id !== "string" || !body.id.startsWith(`${sessionId}_`)) {
@@ -160,7 +164,8 @@ api.get("/annotations/:id", async (c) => {
 // ({...existing, ...partial}), so anything else would let a caller rewrite
 // server-owned data: authorId/sessionId (identity), createdAt, or thread
 // (forging a role:"agent" reply).
-const PATCHABLE_FIELDS = ["status", "comment", "resolvedAt", "resolvedBy", "intent", "severity"] as const
+// Fields a client may change after create. Shared with the DO so both trust
+// boundaries enforce the same list.
 
 // Update annotation
 api.patch("/annotations/:id", async (c) => {

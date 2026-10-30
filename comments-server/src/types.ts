@@ -81,3 +81,13 @@ export interface AgentationEvent {
 export interface RoomState {
   annotations: Annotation[]
 }
+
+/** Fields a client may change after create. Identity, session, thread and timestamps are server-owned. */
+export const PATCHABLE_ANNOTATION_FIELDS = [
+  "status",
+  "comment",
+  "resolvedAt",
+  "resolvedBy",
+  "intent",
+  "severity",
+] as const

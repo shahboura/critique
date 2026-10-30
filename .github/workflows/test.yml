@@ -42,3 +42,7 @@ jobs:
         env:
           NODE_OPTIONS: --localstorage-file=${{ runner.temp }}/localstorage.db
         run: bun run --cwd packages/agentation test --no-file-parallelism
+
+      - name: CLI annotation API tests
+        working-directory: cli
+        run: bun test src/agentation-api.test.ts

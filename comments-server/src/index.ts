@@ -16,3 +16,4 @@ export type {
   AgentationEvent,
   RoomState,
 } from "./types.js"
+export { PATCHABLE_ANNOTATION_FIELDS } from "./types.js"

@@ -75,6 +75,9 @@ RUN bun -e 'import fs from "node:fs"; const cfg = JSON.parse(fs.readFileSync("cl
 # feature is used — if either happens, delete the entry from the list.
 RUN cd node_modules/.bun && rm -rf typescript@* @cloudflare+workers-types@* @opentuah+* tree-sitter* web-tree-sitter@* three@* bun-webgpu* @img+* sharp@* core-js@* react-devtools-core@* planck@* prettier@* pdfkit@* tuistory@* calldiff@* goke@* @agentclientprotocol+sdk@* @parcel+watcher* ghostty-opentui@* jimp@* @jimp+* stage-js@* yoga-layout@* kill-port-process@* pid-from-port@* execa@0.9.0* cross-spawn@5.1.0* file-type@16* diff@8.0.2* node-pty@*
 
+# The vendored widget's build and test toolchain is build-time only.
+RUN cd node_modules/.bun && rm -rf tsup@* vitest@* jsdom@* sass@* postcss@* postcss-modules@* esbuild-sass-plugin@* @vitejs+plugin-react@* @testing-library+* @types+react@* @types+react-dom@* @types+node@*
+
 # --- runtime stage: plain Node, because `wrangler dev` hangs when run by bun ---
 FROM node:26-slim
 ENV WRANGLER_SEND_METRICS=false WRANGLER_SEND_ERROR_REPORTS=false WRANGLER_HIDE_BANNER=true DO_NOT_TRACK=1 CI=1
