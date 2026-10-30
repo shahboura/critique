@@ -5,6 +5,7 @@
 import { TextAttributes, rgbToHex, type RGBA } from "@opentuah/core"
 import type { CapturedFrame, CapturedLine, CapturedSpan } from "@opentuah/core"
 import dedent from "string-dedent"
+import { BUILD_ID } from "./build-info.js"
 
 // Alias for syntax highlighting in editors (tagged template behaves identically)
 const html = dedent
@@ -256,6 +257,7 @@ export function frameToHtmlDocument(frame: CapturedFrame, options: ToHtmlOptions
     }
     </style>
     <title>${escapeHtml(title)}</title>
+    <meta name="critique-build" content="${escapeHtml(BUILD_ID)}">
     <style>
     /* Tailwind-style global defaults (safe for agentation widget) */
     *, ::before, ::after {

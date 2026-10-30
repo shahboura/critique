@@ -60,6 +60,9 @@ jobs:
       - name: Install
         run: bun install --frozen-lockfile --ignore-scripts
 
+      - name: Stamp the build id
+        run: printf 'export const BUILD_ID = "%s"\n' "$GITHUB_SHA" > cli/src/build-info.ts
+
       - name: Build and pack
         run: |
           # worker.tsx imports @critique.work/server types, which the workspace

@@ -38,6 +38,12 @@ RUN test -f cli/node_modules/wrangler/bin/wrangler.js
 
 COPY . .
 
+# Identity of the running worker: /a/health reports it and the comments widget
+# URL carries it, so a stale widget or a mixed version is visible instead of
+# silent. Defaults to "dev" for a plain `docker build`.
+ARG BUILD_ID=dev
+RUN printf 'export const BUILD_ID = "%s"\n' "$BUILD_ID" > cli/src/build-info.ts
+
 # Never bake local secrets into the published image (defense in depth: the
 # .dockerignore patterns already exclude them).
 RUN test -z "$(find . -name '.env*' -not -path '*/node_modules/*' -not -name '*.example' -print -quit)"

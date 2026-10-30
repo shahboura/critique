@@ -13,6 +13,7 @@ import type { BoxRenderable, CapturedFrame, CapturedLine, RootRenderable, CliRen
 import { DiffRenderable } from "@opentuah/core"
 import type { IndexedHunk, ReviewYaml } from "./review/types.js"
 import { loadStoredLicenseKey, loadOrCreateOwnerSecret } from "./license.js"
+import { BUILD_ID } from "./build-info.js"
 import type { CallDiffByFile } from "./calldiff.js"
 
 const execAsync = promisify(exec)
@@ -997,6 +998,8 @@ export async function uploadHtml({
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
     "X-Critique-Owner-Secret": ownerSecret,
+    // Which renderer produced this page; the worker can log it per upload
+    "X-Critique-Build": BUILD_ID,
   }
   if (licenseKey) {
     headers["X-Critique-License"] = licenseKey

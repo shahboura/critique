@@ -74,8 +74,7 @@ Try to never use useEffect if possible. usually you can move logic directly in e
 
 ## changesets
 
-After completing a fix or feature, add a `.changeset/*.md` file at the repo root instead of editing CHANGELOG.md. Never edit CHANGELOG.md directly; it is generated at publish time. Never bump `package.json` version manually. Load the `changesets` skill for format and rules.
-
+Add a `.changeset/*.md` file with each user-facing fix or feature instead of editing `CHANGELOG.md`. Version bumps are still manual here (there is no `.changeset/config.json`), so releasing is: bump `cli/package.json`, commit, `git tag v<version>`, `git push --follow-tags`. The tag must equal `cli/package.json` — the `release` workflow enforces it, then publishes `critique-<version>.tgz` plus its sha256 as GitHub release assets. Nothing is published to npm; that package name belongs to a third party.
 
 ## zustand
 
@@ -105,7 +104,7 @@ to upload diffs to the preview worker instead of production, set `CRITIQUE_WORKE
 CRITIQUE_WORKER_URL=https://preview.critique.work bun run cli/src/cli.tsx web --filter "cli/src/ansi-html.ts"
 ```
 
-this uploads to `preview.critique.work` so you can test HTML/CSS/widget changes without affecting production. use this whenever changing `ansi-html.ts`, `web-utils.tsx`, `worker.tsx`, or `comments-client/`.
+this uploads to `preview.critique.work` so you can test HTML/CSS/widget changes without affecting production. use this whenever changing `ansi-html.ts`, `web-utils.tsx`, `worker.tsx`, or `agentation-widget.tsx`.
 
 production deploy (critique.work):
 
@@ -122,29 +121,6 @@ the main command shows the git diff in a tui. the web command uploads the termin
 the command review helps the user review agents diffs, reordering and splitting diff hunks to create a progressive disclosure document with explanations and diagrams. it also supports using --web to upload the result to critique.work
 
 this command takes a long time to run, because it uses ACP to generate the result using an LLM. so to test styles changes we will usually modify scripts/preview-review.tsx instead, which let you preview how the cli looks like. and passing --web to that script to also preview how the website looks like
-
-<!-- opensrc:start -->
-
-## Source Code Reference
-
-Source code for dependencies is available in `opensrc/` for deeper understanding of implementation details.
-
-See `opensrc/sources.json` for the list of available packages and their versions.
-
-Use this source code when you need to understand how a package works internally, not just its types/interface.
-
-### Fetching Additional Source Code
-
-To fetch source code for a package or repository you need to understand, run:
-
-```bash
-npx opensrc <package>           # npm package (e.g., npx opensrc zod)
-npx opensrc pypi:<package>      # Python package (e.g., npx opensrc pypi:requests)
-npx opensrc crates:<package>    # Rust crate (e.g., npx opensrc crates:serde)
-npx opensrc <owner>/<repo>      # GitHub repo (e.g., npx opensrc vercel/ai)
-```
-
-<!-- opensrc:end -->
 
 ## opentui fork
 

@@ -47,3 +47,6 @@ cli/public/agentation-widget.js
 
 .test*
 .wrangler/
+
+# local knowledge graph (graphify-usage skill)
+graphify-out

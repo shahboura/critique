@@ -10,6 +10,8 @@
 import { Hono } from "hono"
 import type { KVNamespace } from "@cloudflare/workers-types"
 import { checkDiffAccess, diffAccessGuard } from "./diff-password.js"
+import { BUILD_ID } from "./build-info.js"
+import { version as pkgVersion } from "../package.json"
 
 type Bindings = {
   CRITIQUE_KV: KVNamespace
@@ -54,7 +56,7 @@ api.use("/sessions/:id/*", diffAccessGuard((c) => c.req.param("id")))
 api.use("/annotations/:id/*", diffAccessGuard((c) => parseAnnotationId(c.req.param("id") ?? "")?.sessionId))
 
 // Health check (Agentation polls this)
-api.get("/health", (c) => c.json({ status: "ok" }))
+api.get("/health", (c) => c.json({ status: "ok", version: pkgVersion, build: BUILD_ID }))
 
 
 

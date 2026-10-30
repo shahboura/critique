@@ -12,7 +12,7 @@ import Stripe from "stripe"
 import { Resend } from "resend"
 import { agentationApi } from "./agentation-api.js"
 import { annotationsContextRoute } from "./routes/annotations-context.js"
-import { version as pkgVersion } from "../package.json"
+import { BUILD_ID } from "./build-info.js"
 import {
   buildKvPutOptions,
   decodeBinaryFromKv,
@@ -897,7 +897,7 @@ async function handleView(c: any) {
     }).replace(/</g, "\\u003c")
     const commentsSnippet = `
 <script>window.__CRITIQUE_CONFIG__=${configJson}</script>
-<script src="/agentation-widget.js?v=${pkgVersion}"></script>`
+<script src="/agentation-widget.js?v=${BUILD_ID}"></script>`
     html = html.replace("</body>", `${commentsSnippet}\n</body>`)
   }
 

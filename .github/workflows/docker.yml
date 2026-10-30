@@ -72,6 +72,9 @@ jobs:
           # `provenance: true` means mode=min and would override the public-repo mode=max default
           provenance: mode=max
           sbom: true
+          # Reported by /a/health and used to bust the comments widget cache
+          build-args: |
+            BUILD_ID=${{ github.sha }}
 
       - name: Smoke test the pushed image
         run: |

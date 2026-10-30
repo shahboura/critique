@@ -506,6 +506,12 @@ describe("ansi-html document", () => {
     expect(doc.indexOf('id="to-top"')).toBeLessThan(doc.indexOf('id="content"'))
   })
 
+  test("pages identify the build that rendered them", () => {
+    const frame = mockFrame(["test"])
+    const doc = frameToHtmlDocument(frame)
+    expect(doc).toContain('<meta name="critique-build" content="dev">')
+  })
+
   test("scroll-to-top surfaces derive from the page colors", () => {
     const frame = mockFrame(["test"])
     const doc = frameToHtmlDocument(frame, { backgroundColor: "#0d1117", textColor: "#e6edf3" })
