@@ -84,7 +84,7 @@ jobs:
           docker run -d --name smoke \
             -e PUBLIC_URL=http://smoke.test "$image"
           code=""
-          for i in $(seq 1 90); do
+          for _ in $(seq 1 90); do
             code=$(docker exec smoke node -e 'fetch("http://127.0.0.1:8787/",{redirect:"manual"}).then(r=>console.log(r.status)).catch(()=>process.exit(1))' 2>/dev/null || true)
             [ "$code" = "302" ] && break
             sleep 1
@@ -154,13 +154,14 @@ jobs:
           sources=$(printf "ghcr.io/${{ github.repository }}@sha256:%s " *)
           echo "tags: $tags"
           echo "sources: $sources"
-          count=$(ls -1 | wc -l)
+          count=$(find . -maxdepth 1 -type f | wc -l)
           [ "$count" -eq 2 ] || { echo "::error::expected 2 arch digests, found $count"; exit 1; }
           for f in *; do
             case "$f" in *[!0-9a-f]*) echo "::error::not a digest filename: $f"; exit 1 ;; esac
             [ ${#f} -eq 64 ] || { echo "::error::bad digest length: $f"; exit 1; }
           done
           set +e
+          # shellcheck disable=SC2086 # $tags/$sources are intentional argument lists
           out=$(docker buildx imagetools create $tags $sources 2>&1)
           code=$?
           set -e
@@ -180,6 +181,7 @@ jobs:
             <<< "$DOCKER_METADATA_OUTPUT_JSON")
           sources=$(printf "ghcr.io/${{ github.repository }}@sha256:%s " *)
           echo "tags: $tags"
+          # shellcheck disable=SC2086 # $tags/$sources are intentional argument lists
           docker buildx imagetools create $tags $sources
 
       - name: Inspect manifest

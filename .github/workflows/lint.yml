@@ -1,0 +1,31 @@
+# Lints the workflow files themselves. Without this, an invalid workflow only
+# shows up as a zero-job red run on main — that is what a `run:` scalar
+# containing `: ` looked like once.
+#
+# Pinned by digest: the image is public and version tags are mutable.
+
+name: lint
+
+on:
+  push:
+    paths: [".github/workflows/**", ".github/actionlint.yaml"]
+  pull_request:
+    paths: [".github/workflows/**", ".github/actionlint.yaml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: lint-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  actionlint:
+    runs-on: ubuntu-26.04
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - name: actionlint
+        run: |
+          docker run --rm -v "$PWD:/repo" -w /repo \
+            rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667

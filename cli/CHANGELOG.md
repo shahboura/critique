@@ -1,3 +1,15 @@
+# 0.4.2
+
+1. **Build identity.** Every generated page carries `<meta name="critique-build">`, uploads send `X-Critique-Build`, and `/a/health` reports `version` and `build`. Released CLI tarballs and the self-host image stamp the commit they were built from, so a page can say which renderer produced it instead of mixing versions silently. The comments widget URL is busted by the build id too.
+
+# 0.4.1
+
+1. **Scroll to top button.** Long diff pages get a button at the bottom right that fades in after scrolling most of a screen and smooth-scrolls back to the top. Its surface follows the page theme, it sits clear of the comments widget, and it honours `prefers-reduced-motion`.
+
+2. **First release published as a GitHub release tarball.** `critique-<version>.tgz` and its sha256 are attached to the tag instead of publishing to npm, whose `critique` name belongs to a third party. Self-hosters pin the release tag they install.
+
+3. **Self-host fixes included here.** `PUBLIC_URL` now drives every absolute URL the worker generates (upload response, `og:image` tags, mobile redirect, comments widget endpoint), and the self-host image dependencies were refreshed to pick up upstream security patches.
+
 # 0.4.0
 
 1. **Password protected web links.** Pass `--password` or set `CRITIQUE_PASSWORD` with `--web` (also works with `critique review --web`). Viewers type the password once; the browser remembers every password that worked, so later links shared with the same password open without asking.

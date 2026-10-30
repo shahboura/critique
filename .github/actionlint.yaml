@@ -1,0 +1,6 @@
+# actionlint reads this file automatically. The 26.04 runners are real
+# GitHub-hosted labels; actionlint's bundled list only knows older images.
+self-hosted-runner:
+  labels:
+    - ubuntu-26.04
+    - ubuntu-26.04-arm
