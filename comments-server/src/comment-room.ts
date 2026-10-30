@@ -19,6 +19,8 @@ interface CommentRoomEnv {
   [key: string]: unknown
 }
 
+const MAX_THREAD_CONTENT_LENGTH = 10_000
+
 export class CommentRoom extends Agent<CommentRoomEnv, RoomState> {
   initialState: RoomState = { annotations: [] }
 
@@ -191,6 +193,15 @@ export class CommentRoom extends Agent<CommentRoomEnv, RoomState> {
   }
 
   addThreadMessage(annotationId: string, input: { role: "human" | "agent"; content: string }): ThreadMessage {
+    // Thread messages are rendered as markdown for agents, so keep both fields
+    // inside the shapes the UI expects. Throwing TypeError maps to HTTP 400.
+    if (input?.role !== "human" && input?.role !== "agent") {
+      throw new TypeError("role must be \"human\" or \"agent\"")
+    }
+    if (typeof input.content !== "string" || input.content.length === 0 || input.content.length > MAX_THREAD_CONTENT_LENGTH) {
+      throw new TypeError(`content must be a non-empty string of at most ${MAX_THREAD_CONTENT_LENGTH} characters`)
+    }
+
     const existing = this.loadAnnotation(annotationId)
     if (!existing) {
       throw new Error(`Annotation ${annotationId} not found`)
@@ -353,12 +364,18 @@ export class CommentRoom extends Agent<CommentRoomEnv, RoomState> {
   }
 
   private async handleThreadPost(annotationId: string, request: Request): Promise<Response> {
+    const body = await request
+      .json<{ role: "human" | "agent"; content: string } | null>()
+      .catch(() => null)
+    if (!body) {
+      return Response.json({ error: "Invalid JSON body" }, { status: 400 })
+    }
     try {
-      const body = await request.json() as { role: "human" | "agent"; content: string }
       const msg = this.addThreadMessage(annotationId, body)
       return Response.json(msg, { status: 201 })
     } catch (error) {
-      return Response.json({ error: (error as Error).message }, { status: 404 })
+      const status = error instanceof TypeError ? 400 : 404
+      return Response.json({ error: (error as Error).message }, { status })
     }
   }
 

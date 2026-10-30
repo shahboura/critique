@@ -24,9 +24,19 @@ export const OUTPUT_DETAIL_OPTIONS: {
   { value: "forensic", label: "Forensic" },
 ];
 
+// Annotation text can come from the page or another client, so it is
+// untrusted: collapse CR/LF and control characters so a note cannot forge
+// markdown headings, list items or extra fields.
+function oneLine(value: unknown): string {
+  return String(value ?? "").replace(/[\u0000-\u001f\u007f\u2028\u2029]+/g, " ");
+}
+
+// file:line or file:line-line, no whitespace or colon in the path.
+const ANCHOR_PATTERN = /^[^\s:]+:\d+(?:-\d+)?$/;
+
 export function generateOutputHeader(pathname: string, appName?: string): string {
   let output = `## Page Feedback: ${pathname}\n`;
-  const name = appName?.replace(/[\r\n\t]+/g, " ").trim();
+  const name = oneLine(appName).trim();
   if (name) output += `**App:** ${name.replace(/[\\`*_\[\]<>]/g, "\\$&")}\n`;
   return output;
 }
@@ -63,77 +73,79 @@ export function generateOutput(
 
   annotations.forEach((a, i) => {
     if (detailLevel === "compact") {
-      output += `${i + 1}. **${a.element}**${a.sourceFile ? ` (${a.sourceFile})` : ""}: ${a.comment}`;
+      output += `${i + 1}. **${oneLine(a.element)}**${a.sourceFile ? ` (${oneLine(a.sourceFile)})` : ""}: ${oneLine(a.comment)}`;
       if (a.selectedText) {
-        output += ` (re: "${a.selectedText.slice(0, 30)}${a.selectedText.length > 30 ? "..." : ""}")`;
+        const selected = oneLine(a.selectedText);
+        output += ` (re: "${selected.slice(0, 30)}${selected.length > 30 ? "..." : ""}")`;
       }
       output += "\n";
     } else if (detailLevel === "forensic") {
-      output += `### ${i + 1}. ${a.element}\n`;
+      output += `### ${i + 1}. ${oneLine(a.element)}\n`;
       if (a.isMultiSelect && a.fullPath) {
         output += `*Forensic data shown for first element of selection*\n`;
       }
       if (a.fullPath) {
-        output += `**Full DOM Path:** ${a.fullPath}\n`;
+        output += `**Full DOM Path:** ${oneLine(a.fullPath)}\n`;
       }
       if (a.cssClasses) {
-        output += `**CSS Classes:** ${a.cssClasses}\n`;
+        output += `**CSS Classes:** ${oneLine(a.cssClasses)}\n`;
       }
       if (a.boundingBox) {
         output += `**Position:** x:${Math.round(a.boundingBox.x)}, y:${Math.round(a.boundingBox.y)} (${Math.round(a.boundingBox.width)}×${Math.round(a.boundingBox.height)}px)\n`;
       }
       output += `**Annotation at:** ${a.x.toFixed(1)}% from left, ${Math.round(a.y)}px from top\n`;
       if (a.selectedText) {
-        output += `**Selected text:** "${a.selectedText}"\n`;
+        output += `**Selected text:** "${oneLine(a.selectedText)}"\n`;
       }
       if (a.nearbyText && !a.selectedText) {
-        output += `**Context:** ${a.nearbyText.slice(0, 100)}\n`;
+        output += `**Context:** ${oneLine(a.nearbyText).slice(0, 100)}\n`;
       }
       if (a.computedStyles) {
-        output += `**Computed Styles:** ${a.computedStyles}\n`;
+        output += `**Computed Styles:** ${oneLine(a.computedStyles)}\n`;
       }
       if (a.accessibility) {
-        output += `**Accessibility:** ${a.accessibility}\n`;
+        output += `**Accessibility:** ${oneLine(a.accessibility)}\n`;
       }
       if (a.nearbyElements) {
-        output += `**Nearby Elements:** ${a.nearbyElements}\n`;
+        output += `**Nearby Elements:** ${oneLine(a.nearbyElements)}\n`;
       }
       if (a.sourceFile) {
-        output += `**Source:** ${a.sourceFile}\n`;
+        output += `**Source:** ${oneLine(a.sourceFile)}\n`;
       }
       if (a.reactComponents) {
-        output += `**React:** ${a.reactComponents}\n`;
+        output += `**React:** ${oneLine(a.reactComponents)}\n`;
       }
-      output += `**Feedback:** ${a.comment}\n\n`;
+      output += `**Feedback:** ${oneLine(a.comment)}\n\n`;
     } else {
       // standard and detailed
-      output += `### ${i + 1}. ${a.element}\n`;
-      if (a.anchor) {
-        output += `**Anchor:** ${a.anchor}\n`;
+      output += `### ${i + 1}. ${oneLine(a.element)}\n`;
+      const anchor = oneLine(a.anchor);
+      if (ANCHOR_PATTERN.test(anchor)) {
+        output += `**Anchor:** ${anchor}\n`;
       } else {
-        output += `**Location:** ${a.elementPath}\n`;
+        output += `**Location:** ${oneLine(a.elementPath)}\n`;
       }
       if (a.sourceFile) {
-        output += `**Source:** ${a.sourceFile}\n`;
+        output += `**Source:** ${oneLine(a.sourceFile)}\n`;
       }
       if (a.reactComponents) {
-        output += `**React:** ${a.reactComponents}\n`;
+        output += `**React:** ${oneLine(a.reactComponents)}\n`;
       }
       if (detailLevel === "detailed") {
         if (a.cssClasses) {
-          output += `**Classes:** ${a.cssClasses}\n`;
+          output += `**Classes:** ${oneLine(a.cssClasses)}\n`;
         }
         if (a.boundingBox) {
           output += `**Position:** ${Math.round(a.boundingBox.x)}px, ${Math.round(a.boundingBox.y)}px (${Math.round(a.boundingBox.width)}×${Math.round(a.boundingBox.height)}px)\n`;
         }
       }
       if (a.selectedText) {
-        output += `**Selected text:** "${a.selectedText}"\n`;
+        output += `**Selected text:** "${oneLine(a.selectedText)}"\n`;
       }
       if (detailLevel === "detailed" && a.nearbyText && !a.selectedText) {
-        output += `**Context:** ${a.nearbyText.slice(0, 100)}\n`;
+        output += `**Context:** ${oneLine(a.nearbyText).slice(0, 100)}\n`;
       }
-      output += `**Feedback:** ${a.comment}\n\n`;
+      output += `**Feedback:** ${oneLine(a.comment)}\n\n`;
     }
   });
 

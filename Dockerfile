@@ -26,12 +26,16 @@ WORKDIR /app
 COPY package.json bun.lock ./
 COPY cli/package.json cli/package.json
 COPY comments-server/package.json comments-server/package.json
+# The CLI depends on @critique.work/agentation (workspace:*), so its manifest is
+# part of the workspace set the lockfile pins; without it a frozen install
+# cannot resolve the workspace link.
+COPY packages/agentation/package.json packages/agentation/package.json
 # Skip lifecycle scripts: every package in this image that would compile a native
 # binding (tree-sitter grammars, node-pty, sharp, @parcel/watcher) is trimmed
 # below anyway, and Bun's arm64 node-gyp fallback downloads `node-gyp@latest`
 # during install, which flakes in CI. esbuild uses its prebuilt optional package,
 # and workerd's bin is a JS launcher that resolves @cloudflare/workerd-<platform>.
-RUN bun install --ignore-scripts
+RUN bun install --ignore-scripts --frozen-lockfile
 
 # Fail fast if a future lockfile bump moves wrangler's entry point (used by CMD).
 RUN test -f cli/node_modules/wrangler/bin/wrangler.js
@@ -51,8 +55,9 @@ RUN case "$BUILD_ID" in ""|*[!A-Za-z0-9._-]*) BUILD_ID=dev ;; esac; \
 # .dockerignore patterns already exclude them).
 RUN test -z "$(find . -name '.env*' -not -path '*/node_modules/*' -not -name '*.example' -print -quit)"
 
-# Build the two gitignored artifacts the worker needs:
-#  - cli/public/agentation-widget.js  comments widget (static asset)
+# Build the gitignored artifacts the worker needs:
+#  - cli/public/agentation-widget.js  comments widget (static asset); the script
+#                                     builds the vendored packages/agentation first
 #  - comments-server/dist             CommentRoom Durable Object
 RUN bun run build:comments-widget && bun run build:comments-server
 

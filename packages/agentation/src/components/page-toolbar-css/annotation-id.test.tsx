@@ -65,6 +65,23 @@ it("keeps one annotation when created arrives before the POST response resolves"
   expect(loadAnnotations<Annotation>(pathname).map(a => a.id)).toEqual([posted!.id]);
 });
 
+it("does not re-upload or duplicate a note the server already has under its prefixed id", async () => {
+  saveAnnotations(pathname, [note("123")]);
+  const stored = { ...note("123"), id: "session_123", sessionId: "session" };
+  const posted: Annotation[] = [];
+  vi.stubGlobal("fetch", vi.fn((url: string, options?: RequestInit) => {
+    if (url.endsWith("/annotations")) {
+      posted.push(postBody(options));
+      return response(postBody(options));
+    }
+    return response(url.endsWith("/health") ? {} : { id: "session", annotations: [stored] });
+  }));
+  render(<PageFeedbackToolbarCSS endpoint="http://dup.test" sessionId="session" />);
+  await waitFor(() => expect(Source.instances).toHaveLength(1));
+  await waitFor(() => expect(loadAnnotations<Annotation>(pathname).map(a => a.id)).toEqual(["session_123"]));
+  expect(posted).toHaveLength(0);
+});
+
 it("captures the nearest data-anchor on a created annotation", async () => {
   const posted: Annotation[] = [];
   vi.stubGlobal("fetch", vi.fn((url: string, options?: RequestInit) => {

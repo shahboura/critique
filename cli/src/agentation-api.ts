@@ -156,17 +156,33 @@ api.get("/annotations/:id", async (c) => {
   return new Response(resp.body, resp)
 })
 
+// Fields a client may PATCH. The DO merges the body into the stored row
+// ({...existing, ...partial}), so anything else would let a caller rewrite
+// server-owned data: authorId/sessionId (identity), createdAt, or thread
+// (forging a role:"agent" reply).
+const PATCHABLE_FIELDS = ["status", "comment", "resolvedAt", "resolvedBy", "intent", "severity"] as const
+
 // Update annotation
 api.patch("/annotations/:id", async (c) => {
   const parsed = parseAnnotationId(c.req.param("id"))
   if (!parsed) {
     return c.json({ error: "Invalid annotation ID format" }, 400)
   }
-  const body = await c.req.text()
+  const input = await c.req.json<Record<string, unknown> | null>().catch(() => null)
+  if (!input || typeof input !== "object" || Array.isArray(input)) {
+    return c.json({ error: "Invalid JSON body" }, 400)
+  }
+  const body: Record<string, unknown> = {}
+  for (const field of PATCHABLE_FIELDS) {
+    if (input[field] !== undefined) body[field] = input[field]
+  }
+  if (body.comment !== undefined && typeof body.comment !== "string") {
+    return c.json({ error: "comment must be a string" }, 400)
+  }
   const resp = await proxyToDO(c.env, parsed.sessionId, `https://internal/api/annotations/${parsed.rawId}`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
-    body,
+    body: JSON.stringify(body),
   })
   return new Response(resp.body, resp)
 })

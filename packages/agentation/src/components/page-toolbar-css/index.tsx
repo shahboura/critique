@@ -483,13 +483,27 @@ function PageFeedbackToolbarForRoute({
       !deletedIds.current.has(a.id) && matchesPage(a.url || session.url, pathname, window.location.origin)) } : session;
   const latestPathname = useRef(pathname);
   latestPathname.current = pathname;
-  const applySessionFeedback = (before: Annotation[], incoming: Annotation[], sessionId: string, pagePath = pathname) => {
-    const merged = mergeSessionFeedback(before, loadAnnotations<Annotation>(pagePath), incoming, serverIds.current)
+  const applySessionFeedback = (before: Annotation[], incoming: Annotation[], sessionId: string, pagePath = pathname, current = loadAnnotations<Annotation>(pagePath)) => {
+    const merged = mergeSessionFeedback(before, current, incoming, serverIds.current)
       .filter(keepFeedback);
     // A response for a page the host has since navigated away from must not
     // become the new page's notes.
     if (pagePath === latestPathname.current && routeAlive.current) setAnnotations(merged);
     saveAnnotationsWithSyncMarker(pagePath, merged, sessionId);
+  };
+  // A note that committed server-side but lost its response arrives twice: once
+  // in the snapshot and once in the upload result. One resolved id is one note.
+  const uniqueById = (annotations: Annotation[]) => {
+    const seen = new Set<string>();
+    return annotations.filter(annotation => {
+      // A rejected upload can resolve with an empty body; never merge a row
+      // that has no id or comment.
+      if (!annotation?.id) return false;
+      const id = serverIds.current.get(annotation.id) ?? annotation.id;
+      if (seen.has(id)) return false;
+      seen.add(id);
+      return true;
+    });
   };
   const [annotations, setAnnotations] = useState<Annotation[]>([]);
   const [showMarkers, setShowMarkers] = useState(true);
@@ -979,8 +993,13 @@ function PageFeedbackToolbarForRoute({
             const allLocalAnnotations = loadAnnotations<Annotation>(pathname).filter(isRenderableAnnotation);
             const serverIds = new Set(session.annotations.map((a) => a.id));
             const localToMerge = allLocalAnnotations.filter((a) => {
-              // If it exists on server, don't re-upload
-              if (serverIds.has(a.id)) return false;
+              // The server keys a note minted before the session existed under
+              // its prefixed id, so compare the id the server would store. Keep
+              // the raw comparison for sessions whose rows are unprefixed.
+              if (
+                serverIds.has(a.id) ||
+                serverIds.has(normalizeAnnotationId(a.id, session.id))
+              ) return false;
               // Otherwise, needs to be synced (whether never synced, synced elsewhere, or missing from server)
               return true;
             });
@@ -1013,10 +1032,10 @@ function PageFeedbackToolbarForRoute({
               });
 
               // Mark merged annotations as synced
-              const allAnnotations = [
+              const allAnnotations = uniqueById([
                 ...session.annotations,
                 ...syncedAnnotations,
-              ];
+              ]);
               applySessionFeedback(beforeJoin, allAnnotations, session.id);
             } else {
               applySessionFeedback(beforeJoin, session.annotations, session.id);
@@ -1224,14 +1243,18 @@ function PageFeedbackToolbarForRoute({
             a.id === annotation.id || serverIds.current.get(a.id) === annotation.id);
           if (!isRenderableAnnotation(annotation) || deletedIds.current.has(annotation.id) || known) return;
           const pagePath = latestPathname.current;
-          const saved = loadAnnotations<Annotation>(pagePath);
-          const incoming = saved.some(a => a.id === annotation.id) ? saved : [...saved, annotation];
-          applySessionFeedback(current, incoming, currentSessionId, pagePath);
+          // Merge into the live list, not storage: a note added moments ago may
+          // not be persisted yet, and another reviewer's event must not drop it.
+          applySessionFeedback(current, [...current, annotation], currentSessionId, pagePath, current);
         },
         // A row deleted elsewhere takes the same exit path as a local delete.
         deleted: (id) => {
+          // The stream carries the server id; the marker may still hold the
+          // local id that maps to it.
+          const localId = [...serverIds.current].find(([, serverId]) => serverId === id)?.[0];
           deletedIds.current.add(id);
-          remove({ id });
+          if (localId) deletedIds.current.add(localId);
+          remove({ id: localId ?? id });
         },
       });
     return stop;
@@ -1282,7 +1305,11 @@ function PageFeedbackToolbarForRoute({
 
           // Find annotations that need syncing
           const serverIds = new Set(serverAnnotations.map((a) => a.id));
-          const unsyncedLocal = localAnnotations.filter((a) => !serverIds.has(a.id));
+          const unsyncedLocal = localAnnotations.filter(
+            (a) =>
+              !serverIds.has(a.id) &&
+              !serverIds.has(normalizeAnnotationId(a.id, sessionId!)),
+          );
 
           if (unsyncedLocal.length > 0) {
             const results = await Promise.allSettled(
@@ -1304,7 +1331,7 @@ function PageFeedbackToolbarForRoute({
             });
 
             // Update local state with server + synced annotations
-            const allAnnotations = [...serverAnnotations, ...syncedAnnotations];
+            const allAnnotations = uniqueById([...serverAnnotations, ...syncedAnnotations]);
             applySessionFeedback(localAnnotations, allAnnotations, sessionId!);
           }
         } catch (err) {
@@ -4197,6 +4224,7 @@ function PageFeedbackToolbarForRoute({
                 isDevMode={isDevMode}
                 connectionStatus={connectionStatus}
                 endpoint={endpoint}
+                autoClearSharedAnnotations={autoClearSharedAnnotations}
                 onExited={finishSettingsExit}
                 isOpen={isActive && showSettings}
                 toolbarNearBottom={!!toolbarPosition && toolbarPosition.y < 230}

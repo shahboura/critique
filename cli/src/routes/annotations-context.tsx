@@ -78,10 +78,10 @@ function generateMarkdown(
       output += `**Intent:** ${oneLine(a.intent)}\n`
     }
     output += `**Feedback:** ${oneLine(a.comment)}\n`
-    if (a.thread && a.thread.length > 0) {
+    if (Array.isArray(a.thread) && a.thread.length > 0) {
       output += "\n"
       for (const msg of a.thread) {
-        output += `> **${oneLine(msg.role)}:** ${oneLine(msg.content)}\n`
+        output += `> **${oneLine(msg?.role)}:** ${oneLine(msg?.content)}\n`
       }
     }
     output += "\n"

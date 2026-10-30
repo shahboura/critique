@@ -21,6 +21,8 @@ export type SettingsPanelProps = {
 
   connectionStatus: ConnectionStatus;
   endpoint?: string;
+  /** Hide the Clear on copy/send control in shared sessions. Defaults to true. */
+  autoClearSharedAnnotations?: boolean;
 
   onExited: () => void;
   isOpen: boolean;
@@ -42,6 +44,7 @@ export const SettingsPanel = memo(function SettingsPanel({
   isDevMode,
   connectionStatus,
   endpoint,
+  autoClearSharedAnnotations = true,
   onExited,
   isOpen,
   toolbarNearBottom,
@@ -223,15 +226,19 @@ export const SettingsPanel = memo(function SettingsPanel({
 
           {/* Checkboxes */}
           <div className={styles.settingsSection}>
-            <CheckboxField
-              className="checkbox-field"
-              label="Clear on copy/send"
-              checked={settings.autoClearAfterCopy}
-              onChange={(e) =>
-                onSettingsChange({ autoClearAfterCopy: e.target.checked })
-              }
-              tooltip="Automatically clear annotations after copying"
-            />
+            {/* In a shared session the host can disable clearing on copy/send,
+                so the control would do nothing. */}
+            {(!endpoint || autoClearSharedAnnotations) && (
+              <CheckboxField
+                className="checkbox-field"
+                label="Clear on copy/send"
+                checked={settings.autoClearAfterCopy}
+                onChange={(e) =>
+                  onSettingsChange({ autoClearAfterCopy: e.target.checked })
+                }
+                tooltip="Automatically clear annotations after copying"
+              />
+            )}
             <CheckboxField
               className={styles.checkboxField}
               label="Block page interactions"

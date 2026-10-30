@@ -66,12 +66,19 @@
   // Keep one native click target when number/pencil/delete glyphs change.
   > * { pointer-events: none; }
 
-  // 22px dot keeps a 28px touch target (26px dot -> 32px for multi-select).
+  // 22px dot: a 28px touch target on coarse pointers. On fine pointers keep
+  // only a small inset so stacked markers cannot steal each other's hover.
   &::before {
     content: "";
     position: absolute;
-    inset: -3px;
+    inset: -1px;
     border-radius: inherit;
+  }
+
+  @media (pointer: coarse) {
+    &::before {
+      inset: -3px;
+    }
   }
 
   &:focus-visible {
