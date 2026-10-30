@@ -24,6 +24,7 @@ import {
   IconEyeAnimated,
   IconPausePlayAnimated,
   IconLayout,
+  IconPencil,
 } from "../icons";
 import { HelpTooltip } from "../help-tooltip";
 import { ToolbarToggleIcon } from "./toolbar-toggle-icon";
@@ -3603,6 +3604,14 @@ function PageFeedbackToolbarForRoute({
         }
       }
 
+      // "D" to toggle freehand drawing
+      if (e.key === "d" || e.key === "D") {
+        e.preventDefault();
+        hideTooltipsUntilMouseLeave();
+        if (isDesignMode) closeDesignMode();
+        setIsDrawMode(prev => !prev);
+      }
+
       // "H" to toggle marker visibility
       if (e.key === "h" || e.key === "H") {
         if (annotations.length > 0) {
@@ -3827,7 +3836,6 @@ function PageFeedbackToolbarForRoute({
                 </div>
                 )}
 
-                {/* Draw mode disabled for now
                 <div className={styles.buttonWrapper}>
                   <button
                     className={`${styles.controlButton} ${!isDarkMode ? styles.light : ""}`}
@@ -3838,6 +3846,9 @@ function PageFeedbackToolbarForRoute({
                       setIsDrawMode(prev => !prev);
                     }}
                     data-active={isDrawMode}
+                    aria-label={isDrawMode ? "Exit draw mode" : "Draw mode"}
+                    aria-pressed={isDrawMode}
+                    tabIndex={controlTabIndex}
                   >
                     <IconPencil size={24} />
                   </button>
@@ -3846,7 +3857,6 @@ function PageFeedbackToolbarForRoute({
                     {enableKeyboardShortcuts && <span className={styles.shortcut}>D</span>}
                   </span>
                 </div>
-                */}
 
                 {enableLayoutMode && (
                 <div className={styles.buttonWrapper}>
