@@ -43,7 +43,8 @@
   width: 22px;
   height: 22px;
   background: var(--agentation-color-blue);
-  color: white;
+  // Black clears 4.5:1 on the blue/green/red fills; white was 2.2-3.6:1.
+  color: #000;
   border-radius: 50%;
   display: flex;
   align-items: center;
@@ -64,6 +65,14 @@
 
   // Keep one native click target when number/pencil/delete glyphs change.
   > * { pointer-events: none; }
+
+  // 22px dot keeps a 28px touch target (26px dot -> 32px for multi-select).
+  &::before {
+    content: "";
+    position: absolute;
+    inset: -3px;
+    border-radius: inherit;
+  }
 
   &:focus-visible {
     outline: 2px solid var(--agentation-color-accent);

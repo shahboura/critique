@@ -404,9 +404,11 @@ export function frameToHtmlDocument(frame: CapturedFrame, options: ToHtmlOptions
     #to-top:active {
       transform: scale(0.94);
     }
-    /* Clear the agentation widget: 44px circle at 20px inset, bottom right */
-    body:has(#critique-agentation) #to-top {
+    /* Clear the agentation widget: 44px circle at 20px inset, bottom right.
+       It portals into body, so #critique-agentation itself stays empty. */
+    body:has([data-agentation-portal]) #to-top {
       bottom: 84px;
+      bottom: calc(84px + env(safe-area-inset-bottom, 0px));
     }
     @media (prefers-reduced-motion: reduce) {
       #to-top:active {

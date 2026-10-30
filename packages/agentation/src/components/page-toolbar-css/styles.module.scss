@@ -179,6 +179,8 @@
   top: auto;
   left: auto;
   bottom: 1.25rem;
+  // 20px inset stays as the fallback where env() is unsupported.
+  bottom: calc(1.25rem + env(safe-area-inset-bottom, 0px));
   right: 1.25rem;
   z-index: 100000;
 }
@@ -196,7 +198,8 @@
 }
 
 .toolbar {
-  width: 337px;
+  // Expanded width, clamped so the pill stays on screen at 320px.
+  width: min(337px, calc(100vw - 40px));
   font-family:
     system-ui,
     -apple-system,
@@ -219,6 +222,8 @@
 
 .toolbarContainer {
   position: relative;
+  // 40px viewport inset + the 10px expanded padding (content-box).
+  max-width: calc(100vw - 40px - 10px);
   -webkit-user-select: none;
   user-select: none;
   margin-left: auto;

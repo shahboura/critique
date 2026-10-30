@@ -108,7 +108,11 @@ export function generateOutput(
     } else {
       // standard and detailed
       output += `### ${i + 1}. ${a.element}\n`;
-      output += `**Location:** ${a.elementPath}\n`;
+      if (a.anchor) {
+        output += `**Anchor:** ${a.anchor}\n`;
+      } else {
+        output += `**Location:** ${a.elementPath}\n`;
+      }
       if (a.sourceFile) {
         output += `**Source:** ${a.sourceFile}\n`;
       }

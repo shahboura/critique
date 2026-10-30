@@ -34,6 +34,11 @@ const result = await Bun.build({
   naming: "agentation-widget.js",
   target: "browser",
   plugins: [preactAlias],
+  // PolyForm Shield 1.0.0 requires the notice to travel with the bundled code.
+  banner: `/*! agentation widget — modified fork of agentation by Benji Taylor.
+ * PolyForm Shield License 1.0.0. Copyright (c) 2026 Benji Taylor.
+ * License text: packages/agentation/LICENSE
+ */`,
 })
 
 if (!result.success) {

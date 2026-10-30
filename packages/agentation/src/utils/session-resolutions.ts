@@ -7,6 +7,10 @@ export function subscribeSessionResolutions(
   sessionId: string,
   hasPending: () => boolean,
   onResolved: (annotation: Annotation) => void,
+  onLive: {
+    created?: (annotation: Annotation) => void;
+    deleted?: (id: string) => void;
+  } = {},
 ) {
   let disposed = false;
   let disconnect: (() => void) | undefined;
@@ -44,6 +48,14 @@ export function subscribeSessionResolutions(
     const update = (event: Event) => {
       try { apply(JSON.parse((event as MessageEvent).data).payload); } catch { /* Ignore malformed events. */ }
     };
+    const live = (event: Event, handle: (annotation: Annotation) => void) => {
+      try {
+        const { payload } = JSON.parse((event as MessageEvent).data);
+        if (!disposed && payload?.id) handle(payload);
+      } catch { /* Ignore malformed events. */ }
+    };
+    const created = (event: Event) => live(event, annotation => onLive.created?.(annotation));
+    const deleted = (event: Event) => live(event, annotation => onLive.deleted?.(annotation.id));
     const error = () => {
       // CONNECTING retries are handled natively. A terminal HTTP error leaves
       // EventSource CLOSED, so recovery requires a new instance.
@@ -54,10 +66,14 @@ export function subscribeSessionResolutions(
     };
     source.addEventListener("open", open);
     source.addEventListener("annotation.updated", update);
+    source.addEventListener("annotation.created", created);
+    source.addEventListener("annotation.deleted", deleted);
     source.addEventListener("error", error);
     disconnect = () => {
       source.removeEventListener("open", open);
       source.removeEventListener("annotation.updated", update);
+      source.removeEventListener("annotation.created", created);
+      source.removeEventListener("annotation.deleted", deleted);
       source.removeEventListener("error", error);
       source.close();
     };

@@ -47,12 +47,13 @@ Browser                        Cloudflare Worker               Durable Object
 
 Large diffs (> 1MB) skip widget injection entirely. Agentation's CSS (365 rules) causes Safari to re-evaluate style matching on all DOM nodes, which is prohibitively slow on diffs with 185K+ elements.
 
-**2. Widget init** — `agentation-widget.js` is a bundled React app (`comments-client/src/widget.tsx`). On load it:
+**2. Widget init** — `agentation-widget.js` is a bundled React app (`cli/src/agentation-widget.tsx`). On load it:
 
 - Injects `content-visibility: auto` CSS on `.line` elements (off-screen rendering optimization)
-- If `@scope` is supported (Safari 17.4+, Chrome 118+) and `#content` exists, monkey-patches `Node.prototype.appendChild` to wrap agentation's injected `<style>` blocks in `@scope (body) to (#content)` — this excludes the diff subtree from CSS selector matching
-- Dynamically imports `agentation` (dynamic import ensures the monkey-patch is active before agentation's module-level style injection runs)
+- Dynamically imports `@critique.work/agentation` (vendored from upstream v3.1.2 in `packages/agentation`)
 - Renders `<Agentation endpoint="..." sessionId="..." />` into a container div
+
+Agentation v3 renders its toolbar and styles inside Shadow DOM, so host page CSS does not leak into the widget and the widget does not restyle the diff subtree. The old `@scope` monkey-patch is gone.
 
 **3. Agentation UI** — The agentation component renders:
 
@@ -113,7 +114,7 @@ A separate route at `GET /v/:id/annotations` that returns all annotations for a 
 
 **content-visibility** — The base CSS in `ansi-html.ts` includes `content-visibility: auto` on `.line` elements so the browser skips layout/paint for off-screen lines. Disabled on iOS Safari via `@supports (-webkit-touch-callout: none)` due to rendering issues.
 
-**@scope CSS isolation** — The widget wraps agentation's component CSS in `@scope (body) to (#content)` so Safari excludes the diff subtree (`#content` and its 185K descendants) from selector matching when agentation's 365 CSS rules are injected.
+**Shadow DOM style isolation** — Agentation v3 renders its toolbar and styles in Shadow DOM, so the host page's CSS does not affect the widget and the widget's CSS does not trigger selector matching across the diff's 185K descendants.
 
 **Size-gated widget** — Agentation is only injected on diffs under 1MB HTML. Large diffs skip the widget entirely to avoid any CSS/JS overhead.
 
@@ -122,7 +123,8 @@ A separate route at `GET /v/:id/annotations` that returns all annotations for a 
 | Package | Path | Description |
 |---------|------|-------------|
 | `@critique.work/server` | `comments-server/` | CommentRoom DO + Hono worker |
-| `@critique.work/client` | `comments-client/` | Widget entry point, bundles agentation |
+| `@critique.work/agentation` | `packages/agentation/` | Vendored upstream agentation v3.1.2 + fork patches; built by `build:agentation` |
+| Widget entry point | `cli/src/agentation-widget.tsx` | Bundled into `cli/public/agentation-widget.js` |
 | `critique` (CLI) | `cli/` | Main worker, agentation API proxy, HTML generation |
 
 ## Config

@@ -126,10 +126,20 @@ export class CommentRoom extends Agent<CommentRoomEnv, RoomState> {
       updatedAt: now,
     }
 
-    this.sql`
+    // Idempotent create: a retried POST with the same id keeps the first row and
+    // must not duplicate in-memory state or emit a second annotation.created.
+    const inserted = this.sql<{ id: string }>`
       INSERT INTO annotations (id, timestamp, status, data)
       VALUES (${annotation.id}, ${annotation.timestamp}, ${annotation.status ?? null}, ${JSON.stringify(annotation)})
+      ON CONFLICT(id) DO NOTHING
+      RETURNING id
     `
+
+    if (inserted.length === 0) {
+      const existing = this.loadAnnotation(annotation.id)
+      if (!existing) throw new Error(`Annotation ${annotation.id} not found`)
+      return existing
+    }
 
     this.setState({
       annotations: [...this.state.annotations, annotation],

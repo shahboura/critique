@@ -44,6 +44,7 @@ import {
   getAccessibilityInfo,
   getNearbyElements,
   closestCrossingShadow,
+  findAnchor,
 } from "../../utils/element-identification";
 import {
   loadAnnotations,
@@ -69,6 +70,7 @@ import {
 import {
   createSession,
   getSession,
+  normalizeAnnotationId,
   syncAnnotation,
   updateAnnotation as updateAnnotationOnServer,
   deleteAnnotation as deleteAnnotationFromServer,
@@ -245,7 +247,7 @@ const isPrimaryMultiSelectModifierActive = (event: {
 }): boolean => event.metaKey || event.ctrlKey;
 
 export const COLOR_OPTIONS = [
-  { id: "indigo",  label: "Indigo",  srgb: "#6155F5", p3: "color(display-p3 0.38 0.33 0.96)" },
+  { id: "indigo",  label: "Indigo",  srgb: "#6E63F7", p3: "color(display-p3 0.45 0.40 0.97)" },
   { id: "blue",    label: "Blue",    srgb: "#0088FF", p3: "color(display-p3 0.00 0.53 1.00)" },
   { id: "cyan",    label: "Cyan",    srgb: "#00C3D0", p3: "color(display-p3 0.00 0.76 0.82)" },
   { id: "green",   label: "Green",   srgb: "#34C759", p3: "color(display-p3 0.20 0.78 0.35)" },
@@ -362,6 +364,12 @@ export type PageFeedbackToolbarCSSProps = {
   onOpenSource?: (sourceFile: string) => void;
   /** Mount inside a host modal/popover to share its focus and top layer. Defaults to document.body. */
   portalContainer?: HTMLElement | ShadowRoot | null;
+  /** Show the pause/resume animations button. Defaults to true. */
+  showFreezeButton?: boolean;
+  /** Enable layout mode, its toolbar button and the L shortcut. Defaults to true. */
+  enableLayoutMode?: boolean;
+  /** Let Copy/Send clear annotations in a shared session. Defaults to true; multi-reviewer hosts should set false. */
+  autoClearSharedAnnotations?: boolean;
 };
 
 /** Alias for PageFeedbackToolbarCSSProps */
@@ -411,6 +419,9 @@ function PageFeedbackToolbarForRoute({
   onSessionCreated,
   webhookUrl,
   className: userClassName,
+  showFreezeButton = true,
+  enableLayoutMode = true,
+  autoClearSharedAnnotations = true,
 }: PageFeedbackToolbarCSSProps & {
   pathname: string;
   activeState: [boolean, Dispatch<SetStateAction<boolean>>];
@@ -439,9 +450,12 @@ function PageFeedbackToolbarForRoute({
   const keepFeedback = (annotation: Annotation) => isRenderableAnnotation(annotation) &&
     !deletedIds.current.has(annotation.id);
   const syncPageAnnotation = async (...args: Parameters<typeof syncAnnotation>) => {
-    const saved = await syncAnnotation(...args);
     const sent = args[2];
     const localId = sent.id;
+    // The room broadcasts the prefixed client id before the response arrives,
+    // so route the local id to it now or the live event looks like a new note.
+    if (localId) serverIds.current.set(localId, normalizeAnnotationId(localId, args[1]));
+    const saved = await syncAnnotation(...args);
     if (localId) {
       serverIds.current.set(localId, saved.id);
       if (deletedIds.current.has(localId)) deletedIds.current.add(saved.id);
@@ -547,6 +561,7 @@ function PageFeedbackToolbarForRoute({
     nearbyElements?: string;
     reactComponents?: string;
     sourceFile?: string;
+    anchor?: string;
     attributes?: Record<string, string>;
     frame?: Annotation["frame"];
     elementBoundingBoxes?: Array<{
@@ -561,6 +576,7 @@ function PageFeedbackToolbarForRoute({
     targetElement?: HTMLElement;
   } | null>(null);
   const [copied, setCopied] = useState(false);
+  const [copyStatus, setCopyStatus] = useState("");
   const copyAction = useLatestAction();
   const sendAction = useLatestAction();
   const [sendState, setSendState] = useState<
@@ -1166,7 +1182,7 @@ function PageFeedbackToolbarForRoute({
   useEffect(() => {
     if (!endpoint || !mounted || !currentSessionId) return;
 
-    const remove = (annotation: Annotation) => {
+    const remove = (annotation: Pick<Annotation, "id" | "kind">) => {
       const { id, kind } = annotation;
 
       if (kind === "placement") {
@@ -1199,7 +1215,25 @@ function PageFeedbackToolbarForRoute({
       }
     };
     const stop = subscribeSessionResolutions(endpoint, currentSessionId,
-      () => hasPendingFeedbackRef.current, remove);
+      () => hasPendingFeedbackRef.current, remove, {
+        // Fold a row created elsewhere into the same merge path as a fetched
+        // snapshot, so notes created while a request is in flight survive.
+        created: (annotation) => {
+          const current = currentAnnotationsRef.current;
+          const known = current.some(a =>
+            a.id === annotation.id || serverIds.current.get(a.id) === annotation.id);
+          if (!isRenderableAnnotation(annotation) || deletedIds.current.has(annotation.id) || known) return;
+          const pagePath = latestPathname.current;
+          const saved = loadAnnotations<Annotation>(pagePath);
+          const incoming = saved.some(a => a.id === annotation.id) ? saved : [...saved, annotation];
+          applySessionFeedback(current, incoming, currentSessionId, pagePath);
+        },
+        // A row deleted elsewhere takes the same exit path as a local delete.
+        deleted: (id) => {
+          deletedIds.current.add(id);
+          remove({ id });
+        },
+      });
     return stop;
   }, [endpoint, mounted, currentSessionId]);
 
@@ -1682,6 +1716,7 @@ function PageFeedbackToolbarForRoute({
         reactComponents: firstItem.reactComponents,
         targetElement: firstEl,
         sourceFile: detectSourceFile(firstEl),
+        anchor: findAnchor(firstEl) ?? undefined,
         attributes: captureElementAttributes(firstEl, attributeNames),
       });
     } else {
@@ -1743,6 +1778,7 @@ function PageFeedbackToolbarForRoute({
         cssClasses: getElementClasses(firstEl),
         nearbyText: getNearbyText(firstEl),
         sourceFile: detectSourceFile(firstEl),
+        anchor: findAnchor(firstEl) ?? undefined,
         attributes: captureElementAttributes(firstEl, attributeNames),
       });
     }
@@ -2081,6 +2117,7 @@ function PageFeedbackToolbarForRoute({
         nearbyElements: getNearbyElements(elementUnder),
         reactComponents: reactComponents ?? undefined,
         sourceFile: detectSourceFile(elementUnder),
+        anchor: findAnchor(elementUnder) ?? undefined,
         attributes: captureElementAttributes(elementUnder, attributeNames),
         frame: captureFrameContext(elementUnder, e.clientX, e.clientY),
         targetElement: elementUnder, // Store for live position queries
@@ -2548,6 +2585,7 @@ function PageFeedbackToolbarForRoute({
               cssClasses: getElementClasses(firstElement),
               nearbyText: getNearbyText(firstElement),
               sourceFile: detectSourceFile(firstElement),
+              anchor: findAnchor(firstElement) ?? undefined,
         attributes: captureElementAttributes(firstElement, attributeNames),
             });
           }
@@ -2560,6 +2598,7 @@ function PageFeedbackToolbarForRoute({
 
           // Only create if drag area is meaningful size (not just a click)
           if (width > 20 && height > 20) {
+            const origin = pierceElementFromPoint(left, top);
             setPendingAnnotation({
               id: Date.now().toString(),
               x,
@@ -2573,6 +2612,7 @@ function PageFeedbackToolbarForRoute({
                 width,
                 height,
               },
+              anchor: origin ? findAnchor(origin) ?? undefined : undefined,
               isMultiSelect: true,
             });
           }
@@ -2643,7 +2683,11 @@ function PageFeedbackToolbarForRoute({
       if (!pendingAnnotation || pendingAnnotation.isSubmitted) return;
 
       const newAnnotation: Annotation = {
-        id: pendingAnnotation.id,
+        // A session-owned id is final: the room broadcasts it before the POST
+        // response arrives, so remapping here would append a second copy.
+        id: currentSessionId
+          ? normalizeAnnotationId(crypto.randomUUID(), currentSessionId)
+          : pendingAnnotation.id,
         x: pendingAnnotation.x,
         y: pendingAnnotation.y,
         comment,
@@ -2662,6 +2706,7 @@ function PageFeedbackToolbarForRoute({
         nearbyElements: pendingAnnotation.nearbyElements,
         reactComponents: pendingAnnotation.reactComponents,
         sourceFile: pendingAnnotation.sourceFile,
+        anchor: pendingAnnotation.anchor,
         attributes: pendingAnnotation.attributes,
         frame: pendingAnnotation.frame,
         elementBoundingBoxes: pendingAnnotation.elementBoundingBoxes,
@@ -2677,6 +2722,13 @@ function PageFeedbackToolbarForRoute({
             }
           : {}),
       };
+
+      // Carry the pending marker's React key and entrance state across the id
+      // mint so the marker animates in place instead of remounting.
+      if (newAnnotation.id !== pendingAnnotation.id) {
+        markerKeys.current.set(newAnnotation.id, pendingAnnotation.id);
+        if (animatedMarkers.current.delete(pendingAnnotation.id)) animatedMarkers.current.add(newAnnotation.id);
+      }
 
       setAnnotations((prev) => [...prev, newAnnotation]);
       setPendingAnnotation({ ...pendingAnnotation, isSubmitted: true });
@@ -2706,7 +2758,9 @@ function PageFeedbackToolbarForRoute({
             if (!routeAlive.current || deletedIds.current.has(newAnnotation.id)) return;
             // Update local annotation with server-assigned ID
             if (serverAnnotation.id !== newAnnotation.id) {
-              markerKeys.current.set(serverAnnotation.id, newAnnotation.id);
+              // Resolve through the existing chain so a minted id keeps the
+              // pending marker's key and does not remount.
+              markerKeys.current.set(serverAnnotation.id, markerKeys.current.get(newAnnotation.id) ?? newAnnotation.id);
               if (recentlyAddedIdRef.current === newAnnotation.id) recentlyAddedIdRef.current = serverAnnotation.id;
               setAnnotations((prev) =>
                 prev.map((a) =>
@@ -3148,7 +3202,7 @@ function PageFeedbackToolbarForRoute({
 
     output = formatCopyOutput(annotations, output, copyFormat);
     // Missing metadata must not clear notes or replace the user's clipboard.
-    if (!output) { setCopied(false); return; }
+    if (!output) { setCopied(false); setCopyStatus("Copy failed: nothing to copy"); return; }
     const copiedOk = !copyToClipboard || await copyTextToClipboard(output);
 
     // Preserve callback delivery even when the system clipboard is unavailable.
@@ -3156,10 +3210,13 @@ function PageFeedbackToolbarForRoute({
 
     if (!copyAction.isCurrent(action)) return;
     setCopied(copiedOk);
+    setCopyStatus(copiedOk ? "Feedback copied" : "Copy failed: clipboard unavailable");
     if (!copiedOk) return;
-    copyAction.schedule(action, () => setCopied(false), 2000);
+    copyAction.schedule(action, () => { setCopied(false); setCopyStatus(""); }, 2000);
 
-    if (settings.autoClearAfterCopy) {
+    // Copy is a read action. In a shared session it must not delete notes,
+    // including other reviewers', unless the host explicitly allows it.
+    if (settings.autoClearAfterCopy && (!endpoint || autoClearSharedAnnotations)) {
       copyAction.schedule(action, clearAll, 500);
     }
   }, [
@@ -3176,6 +3233,8 @@ function PageFeedbackToolbarForRoute({
     effectiveReactMode,
     attributeNames,
     settings.autoClearAfterCopy,
+    endpoint,
+    autoClearSharedAnnotations,
     clearAll,
     copyAction,
     copyToClipboard,
@@ -3261,8 +3320,10 @@ function PageFeedbackToolbarForRoute({
     setSendState(success ? "sent" : "failed");
     sendAction.schedule(action, () => setSendState("idle"), 2500);
 
-    // Clear annotations if send succeeded and autoClearAfterCopy is enabled
-    if (success && settings.autoClearAfterCopy) {
+    // Clear annotations if send succeeded and autoClearAfterCopy is enabled.
+    // In a shared session, send must not clear other reviewers' notes unless
+    // the host explicitly allows it.
+    if (success && settings.autoClearAfterCopy && (!endpoint || autoClearSharedAnnotations)) {
       sendAction.schedule(action, clearAll, 500);
     }
   }, [
@@ -3279,6 +3340,8 @@ function PageFeedbackToolbarForRoute({
     effectiveReactMode,
     attributeNames,
     settings.autoClearAfterCopy,
+    endpoint,
+    autoClearSharedAnnotations,
     clearAll,
     hasWebhookTarget,
     canSend,
@@ -3520,14 +3583,14 @@ function PageFeedbackToolbarForRoute({
       if (e.repeat) return;
 
       // "P" to toggle pause/freeze
-      if (e.key === "p" || e.key === "P") {
+      if (showFreezeButton && (e.key === "p" || e.key === "P")) {
         e.preventDefault();
         hideTooltipsUntilMouseLeave();
         toggleFreeze();
       }
 
       // "L" to toggle layout mode
-      if (e.key === "l" || e.key === "L") {
+      if (enableLayoutMode && (e.key === "l" || e.key === "L")) {
         e.preventDefault();
         hideTooltipsUntilMouseLeave();
         if (isDrawMode) setIsDrawMode(false);
@@ -3689,6 +3752,13 @@ function PageFeedbackToolbarForRoute({
     <ShadowRoot host="agentation-toolbar" className={userClassName}>
       <style data-agentation-styles="toolbar">{shadowCss}{agentationColorTokensCss}</style>
       <div ref={portalWrapperRef} className={styles.positionContext} style={{ display: "contents" }} data-agentation-theme={isDarkMode ? "dark" : "light"} data-agentation-accent={settings.annotationColorId} data-agentation-root="">
+        <span
+          role="status"
+          aria-live="polite"
+          style={{ position: "absolute", width: 1, height: 1, overflow: "hidden", clip: "rect(0 0 0 0)", whiteSpace: "nowrap" }}
+        >
+          {copyStatus}
+        </span>
           {/* Toolbar */}
           <div
             className={styles.toolbar}
@@ -3728,6 +3798,7 @@ function PageFeedbackToolbarForRoute({
                 onMouseEnter={handleControlsMouseEnter}
                 onMouseLeave={handleControlsMouseLeave}
               >
+                {showFreezeButton && (
                 <div
                   className={`${styles.buttonWrapper} ${
                     toolbarPosition && toolbarPosition.x < 120
@@ -3754,6 +3825,7 @@ function PageFeedbackToolbarForRoute({
                     {enableKeyboardShortcuts && <span className={styles.shortcut}>P</span>}
                   </span>
                 </div>
+                )}
 
                 {/* Draw mode disabled for now
                 <div className={styles.buttonWrapper}>
@@ -3776,6 +3848,7 @@ function PageFeedbackToolbarForRoute({
                 </div>
                 */}
 
+                {enableLayoutMode && (
                 <div className={styles.buttonWrapper}>
                   <button
                     className={`${styles.controlButton} ${!isDarkMode ? styles.light : ""}`}
@@ -3804,6 +3877,7 @@ function PageFeedbackToolbarForRoute({
                     {enableKeyboardShortcuts && <span className={styles.shortcut}>L</span>}
                   </span>
                 </div>
+                )}
 
                 <div className={styles.buttonWrapper}>
                   <button

@@ -57,6 +57,14 @@ export async function getSession(
 }
 
 /**
+ * Route an id to its session. The server keeps a prefixed client id, so notes
+ * minted before a session existed are written under the id the room broadcasts.
+ */
+export function normalizeAnnotationId(id: string, sessionId: string): string {
+  return id.startsWith(`${sessionId}_`) ? id : `${sessionId}_${id}`;
+}
+
+/**
  * Sync a new annotation to the server.
  * Returns the annotation with any server-assigned fields.
  */
@@ -65,6 +73,7 @@ export async function syncAnnotation(
   sessionId: string,
   annotation: Annotation
 ): Promise<Annotation> {
+  annotation = { ...annotation, id: normalizeAnnotationId(annotation.id, sessionId) };
   // Older page-level notes were saved with an empty path, which the server
   // rejects. Repair only the two known document elements when retrying them.
   if (!annotation.elementPath && (annotation.element === "body" || annotation.element === "html")) {
