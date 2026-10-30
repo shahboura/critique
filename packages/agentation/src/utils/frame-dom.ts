@@ -233,7 +233,12 @@ type Subscription = {
 };
 
 /** One document registry per toolbar, shared by every picking/keyboard listener. */
-export function createPageEvents(root: Document, onGeometryChange?: () => void) {
+export function createPageEvents(
+  root: Document,
+  onGeometryChange?: () => void,
+  options?: { trackFrames?: boolean },
+) {
+  const trackFrames = options?.trackFrames ?? true;
   const documents = new Set<Document>([root]);
   const subscriptions = new Set<Subscription>();
   let observers: MutationObserver[] = [];
@@ -249,6 +254,18 @@ export function createPageEvents(root: Document, onGeometryChange?: () => void) 
   const reconcile = () => {
     queued = false;
     if (!running) return;
+    if (!trackFrames) {
+      // Static pages without embedded documents do not need the full-tree walk
+      // or the mutation observers; only keep the root subscriptions alive.
+      for (const subscription of subscriptions)
+        if (!subscription.handlers.has(root)) connect(subscription, root);
+      observers.forEach((observer) => observer.disconnect());
+      observers = [];
+      frames.clear();
+      resizeObserver?.disconnect();
+      onGeometryChange?.();
+      return;
+    }
     const next = new Set<Document>();
     const nextFrames = new Set<Element>();
     const roots: (Document | ShadowRoot)[] = [];

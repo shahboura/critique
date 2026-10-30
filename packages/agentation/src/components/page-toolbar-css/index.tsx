@@ -368,6 +368,8 @@ export type PageFeedbackToolbarCSSProps = {
   showFreezeButton?: boolean;
   /** Enable layout mode, its toolbar button and the L shortcut. Defaults to true. */
   enableLayoutMode?: boolean;
+  /** Track same-origin iframes and shadow roots for selection. Defaults to true; static pages can disable the document walk. */
+  enableFrameTracking?: boolean;
   /** Let Copy/Send clear annotations in a shared session. Defaults to true; multi-reviewer hosts should set false. */
   autoClearSharedAnnotations?: boolean;
 };
@@ -421,6 +423,7 @@ function PageFeedbackToolbarForRoute({
   className: userClassName,
   showFreezeButton = true,
   enableLayoutMode = true,
+  enableFrameTracking = true,
   autoClearSharedAnnotations = true,
 }: PageFeedbackToolbarCSSProps & {
   pathname: string;
@@ -431,7 +434,7 @@ function PageFeedbackToolbarForRoute({
   const [, updateFrameScroll] = useState(0);
   // This owns live subscriptions, so its lifetime must survive memo-cache
   // invalidation during a development refresh.
-  const [pageEvents] = useState(() => createPageEvents(document, () => updateFrameScroll(value => value + 1)));
+  const [pageEvents] = useState(() => createPageEvents(document, () => updateFrameScroll(value => value + 1), { trackFrames: enableFrameTracking }));
   useEffect(() => { pageEvents.start(); return () => pageEvents.stop(); }, [pageEvents]);
   const copyAttribute = typeof copyFormat === "object" ? copyFormat.attribute : undefined;
   const attributeNames = useMemo(() => copyAttribute

@@ -14,7 +14,7 @@
   "scripts": {
     "cli": "bun src/cli.tsx",
     "cli:watch": "bun --watch src/cli.tsx",
-    "build": "rm -rf dist && tsc",
+    "build": "rm -rf dist && tsc && rm -f dist/agentation-widget.js dist/agentation-widget.js.map dist/agentation-widget.d.ts dist/agentation-widget.d.ts.map",
     "prepublishOnly": "bun run build",
     "example": "bun --watch src/example.tsx",
     "worker:dev": "wrangler dev",

@@ -1,0 +1,32 @@
+# Weekly check for a newer upstream agentation release.
+#
+# The widget is a git subtree of benjitaylor/agentation `package/`. A failing
+# run means a newer vX.Y.Z tag exists; follow the printed pull command, resolve
+# conflicts in the patched files, and re-run the widget tests.
+
+name: agentation upstream
+
+on:
+  schedule:
+    - cron: "0 9 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: agentation-upstream
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-26.04
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: 1.4.4
+
+      - name: Check upstream tags
+        run: bun run agentation:upstream

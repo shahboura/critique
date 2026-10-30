@@ -237,3 +237,15 @@ describe("same-origin frame picking", () => {
     ).toBeNull();
   });
 });
+
+it("skips the document walk when frame tracking is disabled", () => {
+  const walk = vi.spyOn(document, "querySelectorAll");
+  const events = createPageEvents(document, undefined, { trackFrames: false });
+  const click = vi.fn();
+  events.addEventListener("click", click);
+  events.start();
+  expect(walk).not.toHaveBeenCalled();
+  document.body.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+  expect(click).toHaveBeenCalledTimes(1);
+  events.stop();
+});
