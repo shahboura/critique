@@ -7,9 +7,9 @@ name: test
 
 on:
   push:
-    paths: ["packages/agentation/**", "cli/**", "scripts/**", "package.json", ".github/workflows/test.yml"]
+    paths: ["packages/agentation/**", "cli/**", "scripts/**", "e2e/**", "playwright.config.ts", "package.json", ".github/workflows/test.yml"]
   pull_request:
-    paths: ["packages/agentation/**", "cli/**", "scripts/**", "package.json", ".github/workflows/test.yml"]
+    paths: ["packages/agentation/**", "cli/**", "scripts/**", "e2e/**", "playwright.config.ts", "package.json", ".github/workflows/test.yml"]
   workflow_dispatch:
 
 permissions:
@@ -56,3 +56,25 @@ jobs:
           # A newer tag (1) is informational here; a broken check (2) fails.
           [ "$code" -eq 2 ] && exit 2
           exit 0
+
+  widget-e2e:
+    runs-on: ubuntu-26.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: 1.4.4
+
+      - name: Install
+        run: bun install --frozen-lockfile --ignore-scripts
+
+      - name: Build the widget and package
+        run: bun run build:comments-widget
+
+      - name: Install Chromium
+        run: bunx playwright install --with-deps chromium
+
+      - name: Widget e2e
+        run: bun run e2e

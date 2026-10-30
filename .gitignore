@@ -50,3 +50,7 @@ cli/public/agentation-widget.js
 
 # local knowledge graph (graphify-usage skill)
 graphify-out
+
+# playwright
+/test-results
+/playwright-report
