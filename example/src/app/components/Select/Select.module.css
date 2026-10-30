@@ -1,0 +1,251 @@
+@property --Select-scroll-start {
+  syntax: '<length>';
+  inherits: false;
+  initial-value: 0px;
+}
+@property --Select-scroll-end {
+  syntax: '<length>';
+  inherits: false;
+  initial-value: 0px;
+}
+
+  .portal {
+    /* Give the positioner a measurable containing block, including CSS zoom.
+       Fixed coordinates against Window otherwise apply that zoom twice. */
+    position: fixed;
+    inset: 0;
+    contain: layout;
+    pointer-events: none;
+    z-index: var(--layer-menu, 1000);
+  }
+  .root {
+    position: relative;
+    isolation: isolate;
+    pointer-events: auto;
+    --Select-height: 34px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    min-width: 180px;
+    min-height: var(--Select-height);
+    padding: 7px 11px;
+    border: 1px solid var(--border-secondary, #e5e3e0);
+    border-radius: 10px;
+    background: var(--bg-base, white);
+    background-image: var(--control-surface-image, none);
+    box-shadow: var(--control-surface-shadow, none);
+    color: var(--text-primary, #171716);
+    font: inherit;
+    font-size: 13px;
+    line-height: 1.4;
+    text-align: start;
+    cursor: pointer;
+    outline: none;
+    -webkit-tap-highlight-color: transparent;
+    /* Keep the menu anchor at its resting size during pointer-down and release. */
+    transition:
+      background 120ms,
+      border-color 120ms;
+    &::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      border-radius: inherit;
+      background: currentColor;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 100ms cubic-bezier(0.2, 0.8, 0.2, 1);
+    }
+    &[data-size='small'] {
+      --Select-height: 30px;
+      padding: 5px 9px;
+      border-radius: 8px;
+      font-size: 12px;
+    }
+    &[data-size='large'] {
+      --Select-height: 42px;
+      padding: 9px 13px;
+      border-radius: 12px;
+      font-size: 15px;
+    }
+    &[data-variant='tertiary'] {
+      background: var(--bg-primary, #f7f6f4);
+      border-color: transparent;
+    }
+    &[data-variant='ghost'] {
+      background: transparent;
+      box-shadow: none;
+      border-color: transparent;
+    }
+    &[data-variant='primary'] {
+      background: var(--text-primary, #171716);
+      color: var(--bg-base, white);
+      border-color: transparent;
+    }
+    &:hover:not(:disabled),
+    &[data-state='open']:not(:disabled) {
+      &::after {
+        opacity: 0.04;
+        transition-duration: 60ms;
+      }
+    }
+    &:focus-visible { outline: none; }
+    &[data-focus-visible='true'] {
+      outline: 1px solid #999;
+      outline-offset: 2px;
+    }
+    &[data-placeholder] {
+      color: var(--text-tertiary, #787570);
+    }
+    &:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+    }
+  }
+  .root > [data-select-value] {
+    min-width: 0;
+  }
+  .chevron {
+    flex: none;
+    display: flex;
+    opacity: 0.55;
+  }
+  .content[data-select-surface] {
+    padding: 5px;
+    min-width: var(--radix-select-trigger-width);
+    max-height: var(--radix-select-content-available-height, 250px);
+    &[data-size='small'] {
+      font-size: 12px;
+    }
+    &[data-indicator='leading'] .indicator {
+      order: -1;
+      margin-inline-start: 0;
+    }
+  }
+  .scrollFrame {
+    position: relative;
+    min-height: 0;
+  }
+  .viewport {
+    max-height: min(
+      var(--Select-visible-height, 100000px),
+      calc(var(--Menu-row-height) * 8),
+      calc(var(--radix-select-content-available-height, 250px) - 10px)
+    );
+    overscroll-behavior: contain;
+    scroll-padding-block: 6px;
+    cursor: pointer;
+    transition:
+      --Select-scroll-start 100ms ease-out,
+      --Select-scroll-end 100ms ease-out;
+    &[data-select-scrolled] {
+      mask-image: linear-gradient(
+        to bottom,
+        transparent,
+        #000 var(--Select-scroll-start),
+        #000 calc(100% - var(--Select-scroll-end)),
+        transparent
+      );
+    }
+  }
+  .scrollBoundary {
+    position: absolute;
+    inset-inline: 9px;
+    height: 1px;
+    background: color-mix(in srgb, currentColor 8%, transparent);
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 100ms ease-out;
+    &[data-edge='start'] {
+      top: 0;
+    }
+    &[data-edge='end'] {
+      bottom: 0;
+    }
+  }
+  .viewport[data-select-overflow-start]:not([data-select-scrolled])
+    ~ .scrollBoundary[data-edge='start'],
+  .viewport[data-select-overflow-end]:not([data-select-scrolled])
+    ~ .scrollBoundary[data-edge='end'] {
+    opacity: 1;
+  }
+  .item {
+    padding-inline: 9px;
+    cursor: pointer;
+  }
+  .indicator {
+    margin-inline-start: auto;
+  }
+  @media (pointer: coarse) {
+    .root {
+      min-height: 44px;
+    }
+    .item {
+      min-height: 44px;
+    }
+  }
+  @media (forced-colors: active) {
+    .root {
+      border: 1px solid ButtonText;
+    }
+  }
+
+.surface {
+  --Menu-row-height: 30px;
+  position: relative;
+  isolation: isolate;
+  z-index: 1000;
+  max-width: min(340px, calc(100vw - 16px));
+  border-radius: 11px;
+  background: #fff;
+  border: 1px solid rgb(0 0 0 / 8%);
+  box-shadow: 0 2px 4px #00000005, 0 8px 24px #0000000a, 0 24px 56px #0000000d;
+  color: #333;
+  font-family: Inter, -apple-system, BlinkMacSystemFont, sans-serif;
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 18px;
+  text-align: start;
+  outline: none;
+  opacity: 0;
+  transform: scale(0.96);
+  transform-origin: center;
+  transition: transform 100ms ease-out, opacity 100ms ease-out;
+}
+.surface[data-state='open'] {
+  opacity: 1;
+  transform: scale(1);
+  transition: transform 160ms cubic-bezier(0.2, 0.8, 0.2, 1), opacity 80ms linear;
+  @starting-style { opacity: 0; transform: scale(0.96); }
+}
+.surface[data-state='closed'] {
+  /* Keep Radix Presence alive while the reversible transitions finish. */
+  animation: retainExit 100ms linear;
+  pointer-events: none;
+}
+@keyframes retainExit { from, to { visibility: visible; } }
+.item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: var(--Menu-row-height);
+  padding: 6px 9px;
+  border-radius: 7px;
+  outline: none;
+  color: inherit;
+  font: inherit;
+  user-select: none;
+  cursor: pointer;
+  transition: background-color 60ms ease-out;
+}
+.item[data-highlighted] { background: rgb(0 0 0 / 5%); }
+.indicator { display: flex; width: 18px; height: 18px; flex: 0 0 18px; }
+.indicator path { opacity: 0; transition: opacity 80ms; }
+.indicator[data-selected] path { opacity: 1; }
+@media (prefers-reduced-motion: reduce) {
+  .root { transform: none !important; }
+  .surface, .surface[data-state='open'] { transform: none; transition-duration: 80ms; }
+  .surface[data-state='closed'] { animation-duration: 80ms; }
+  .viewport { transition: none; }
+}

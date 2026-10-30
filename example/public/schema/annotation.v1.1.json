@@ -1,0 +1,166 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agentation.com/schema/annotation.v1.1.json",
+  "title": "Annotation",
+  "type": "object",
+  "required": [
+    "id",
+    "comment",
+    "elementPath",
+    "timestamp",
+    "x",
+    "y",
+    "element"
+  ],
+  "properties": {
+    "id": {
+      "type": "string"
+    },
+    "comment": {
+      "type": "string"
+    },
+    "elementPath": {
+      "type": "string"
+    },
+    "timestamp": {
+      "type": "number"
+    },
+    "x": {
+      "type": "number",
+      "description": "% of viewport width (0-100)"
+    },
+    "y": {
+      "type": "number",
+      "description": "px from document top"
+    },
+    "element": {
+      "type": "string"
+    },
+    "url": {
+      "type": "string",
+      "format": "uri"
+    },
+    "boundingBox": {
+      "type": "object",
+      "properties": {
+        "x": {
+          "type": "number"
+        },
+        "y": {
+          "type": "number"
+        },
+        "width": {
+          "type": "number"
+        },
+        "height": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "x",
+        "y",
+        "width",
+        "height"
+      ]
+    },
+    "reactComponents": {
+      "type": "string"
+    },
+    "isFixed": {
+      "type": "boolean"
+    },
+    "isMultiSelect": {
+      "type": "boolean"
+    },
+    "fullPath": {
+      "type": "string"
+    },
+    "nearbyElements": {
+      "type": "string"
+    },
+    "intent": {
+      "enum": [
+        "fix",
+        "change",
+        "question",
+        "approve"
+      ]
+    },
+    "severity": {
+      "enum": [
+        "blocking",
+        "important",
+        "suggestion"
+      ]
+    },
+    "kind": {
+      "enum": [
+        "feedback",
+        "placement",
+        "rearrange"
+      ],
+      "default": "feedback"
+    },
+    "placement": {
+      "type": "object",
+      "properties": {
+        "componentType": {
+          "type": "string"
+        },
+        "width": {
+          "type": "number"
+        },
+        "height": {
+          "type": "number"
+        },
+        "scrollY": {
+          "type": "number"
+        },
+        "text": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "componentType",
+        "width",
+        "height",
+        "scrollY"
+      ]
+    },
+    "rearrange": {
+      "type": "object",
+      "properties": {
+        "selector": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        },
+        "tagName": {
+          "type": "string"
+        },
+        "originalRect": {
+          "$ref": "#/properties/boundingBox"
+        },
+        "currentRect": {
+          "$ref": "#/properties/boundingBox"
+        }
+      },
+      "required": [
+        "selector",
+        "label",
+        "tagName",
+        "originalRect",
+        "currentRect"
+      ]
+    },
+    "status": {
+      "enum": [
+        "pending",
+        "acknowledged",
+        "resolved",
+        "dismissed"
+      ]
+    }
+  }
+}

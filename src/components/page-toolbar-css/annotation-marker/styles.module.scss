@@ -1,0 +1,192 @@
+@keyframes markerIn {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.3);
+  }
+  100% {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+  }
+}
+
+@keyframes markerOut {
+  0% {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.3);
+  }
+}
+
+@keyframes renumberRoll {
+  0% {
+    transform: translateX(-40%);
+    opacity: 0;
+  }
+  100% {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+.marker {
+  padding: 0;
+  border: 0;
+  box-sizing: border-box;
+  font-family: inherit;
+  line-height: 1;
+  text-align: center;
+  appearance: none;
+  position: absolute;
+  width: 22px;
+  height: 22px;
+  background: var(--agentation-color-blue);
+  color: white;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  transform: translate(-50%, -50%) scale(1);
+  opacity: 1;
+  cursor: pointer;
+  box-shadow:
+    0 2px 6px rgba(0, 0, 0, 0.2),
+    inset 0 0 0 1px rgba(0, 0, 0, 0.04);
+  -webkit-user-select: none;
+  user-select: none;
+  will-change: transform, opacity;
+  contain: layout style;
+  z-index: 1;
+
+  // Keep one native click target when number/pencil/delete glyphs change.
+  > * { pointer-events: none; }
+
+  &:focus-visible {
+    outline: 2px solid var(--agentation-color-accent);
+    outline-offset: 3px;
+  }
+
+  &:hover, &:focus-visible, &.previewVisible {
+    z-index: 2;
+  }
+
+  &:not(.enter):not(.exit):not(.clearing):not(.confirm) {
+    transition:
+      background-color 0.15s ease,
+      transform 0.1s ease,
+      z-index 0s 0.1s;
+
+    &:hover, &:focus-visible, &.previewVisible {
+      transition-delay: 0s;
+    }
+  }
+
+  &.enter {
+    animation: markerIn 0.25s cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+
+  &.confirm {
+    animation: markerConfirm 220ms ease-out both;
+  }
+
+  &.exit {
+    animation: markerOut 0.2s ease-out both;
+    pointer-events: none;
+  }
+
+  &.clearing {
+    animation: markerOut 0.15s ease-out both;
+    pointer-events: none;
+  }
+
+  &:not(.enter):not(.exit):not(.clearing):not(.confirm):hover {
+    transform: translate(-50%, -50%) scale(1.1);
+  }
+
+  &.pending {
+    background-color: var(--agentation-color-blue);
+    cursor: default;
+  }
+
+  &.pending.exit { animation-duration: 150ms; }
+
+  &.multiSelect {
+    background-color: var(--agentation-color-green);
+    width: 26px;
+    height: 26px;
+    border-radius: 6px;
+    font-size: 0.75rem;
+
+    &.pending {
+      background-color: var(--agentation-color-green);
+    }
+  }
+
+  &.hovered {
+    background-color: var(--agentation-color-red);
+  }
+}
+
+.renumber {
+  display: block;
+  animation: renumberRoll 0.2s ease-out;
+}
+
+@keyframes markerConfirm {
+  0% { transform: translate(-50%, -50%) scale(1); }
+  25% { transform: translate(-50%, -50%) scale(0.94); }
+  65% { transform: translate(-50%, -50%) scale(1.06); }
+  100% { transform: translate(-50%, -50%) scale(1); }
+}
+.number {
+  display: block;
+}
+// Keep the renumber roll on the outer span, independent of hover motion.
+.numberGlyph {
+  display: block;
+  opacity: 1;
+  transform: translateY(0);
+  filter: blur(0);
+  transition: opacity 140ms ease-out, transform 180ms cubic-bezier(0.22, 1, 0.36, 1), filter 140ms ease-out;
+}
+.actionGlyph {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  opacity: 0;
+  transform: translateY(2px) scale(0.8) rotate(-12deg);
+  filter: blur(1px);
+  transition: opacity 120ms ease-out, transform 160ms cubic-bezier(0.22, 1, 0.36, 1), filter 120ms ease-out;
+}
+.actionVisible {
+  .numberGlyph { opacity: 0; transform: translateY(-2px) scale(0.8); filter: blur(1px); }
+  .actionGlyph { opacity: 1; transform: translateY(0) scale(1) rotate(0); filter: blur(0); }
+}
+.plus {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  opacity: 0;
+  transform: rotate(-90deg) scale(0.6);
+  filter: blur(1px);
+  transition: opacity 100ms ease-out, transform 140ms ease-out, filter 100ms ease-out;
+  pointer-events: none;
+}
+.pending {
+  .numberGlyph { opacity: 0; transform: translateY(5px); filter: blur(2px); }
+  .plus { opacity: 1; transform: rotate(0) scale(1); filter: blur(0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .marker {
+    &.enter, &.exit, &.clearing, &.confirm { animation-duration: 1ms; animation-delay: 0ms !important; }
+  }
+  .numberGlyph, .actionGlyph, .plus { transition: opacity 100ms ease-out; transform: none; filter: none; }
+  .pending .numberGlyph, .pending .plus,
+  .actionVisible .numberGlyph, .actionVisible .actionGlyph { transform: none; filter: none; }
+}
