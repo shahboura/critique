@@ -100,6 +100,12 @@ jobs:
           for f in package/dist/cli.js package/dist/build-info.js package/src/themes/github.json package/public/jetbrains-mono-nerd.woff2 package/public/third-party-licenses.txt; do
             tar -tzf "$tgz" | grep -qx "$f" || { echo "::error::$f missing from the tarball"; exit 1; }
           done
+          # The widget wrapper's tsc output is dead for CLI users; the bundled
+          # widget is built at deploy time and must never leak into the tarball.
+          if tar -tzf "$tgz" | grep -q "package/dist/agentation-widget"; then
+            echo "::error::dead agentation-widget output leaked into the tarball"
+            exit 1
+          fi
 
       - name: Smoke install
         run: |

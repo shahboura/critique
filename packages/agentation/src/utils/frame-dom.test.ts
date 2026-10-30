@@ -248,4 +248,11 @@ it("skips the document walk when frame tracking is disabled", () => {
   document.body.dispatchEvent(new MouseEvent("click", { bubbles: true }));
   expect(click).toHaveBeenCalledTimes(1);
   events.stop();
+
+  // Positive control: the default path still walks the document.
+  walk.mockClear();
+  const tracked = createPageEvents(document);
+  tracked.start();
+  expect(walk).toHaveBeenCalled();
+  tracked.stop();
 });

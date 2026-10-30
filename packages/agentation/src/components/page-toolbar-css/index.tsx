@@ -368,7 +368,7 @@ export type PageFeedbackToolbarCSSProps = {
   showFreezeButton?: boolean;
   /** Enable layout mode, its toolbar button and the L shortcut. Defaults to true. */
   enableLayoutMode?: boolean;
-  /** Track same-origin iframes and shadow roots for selection. Defaults to true; static pages can disable the document walk. */
+  /** Track same-origin iframes and shadow roots for selection. Defaults to true; static pages can disable the document walk. Read once at mount. */
   enableFrameTracking?: boolean;
   /** Let Copy/Send clear annotations in a shared session. Defaults to true; multi-reviewer hosts should set false. */
   autoClearSharedAnnotations?: boolean;

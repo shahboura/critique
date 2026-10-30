@@ -259,6 +259,8 @@ export function createPageEvents(
       // or the mutation observers; only keep the root subscriptions alive.
       for (const subscription of subscriptions)
         if (!subscription.handlers.has(root)) connect(subscription, root);
+      // Defensive: trackFrames is a construction-time constant, so these are
+      // already empty, but keep the cleanup if that ever becomes a toggle.
       observers.forEach((observer) => observer.disconnect());
       observers = [];
       frames.clear();

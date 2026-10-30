@@ -5,7 +5,7 @@ description: How annotations work on critique diff pages — from widget injecti
 
 # Commenting System
 
-Critique diff pages at `critique.work/v/<id>` support inline annotations powered by the [agentation](https://www.npmjs.com/package/agentation) npm package and a Cloudflare Durable Object backend.
+Critique diff pages at `critique.work/v/<id>` support inline annotations powered by agentation, vendored at `packages/agentation` from upstream v3.1.2 (PolyForm Shield 1.0.0), with a Cloudflare Durable Object backend.
 
 ## Architecture
 

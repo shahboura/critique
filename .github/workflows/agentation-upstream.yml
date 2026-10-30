@@ -21,6 +21,7 @@ concurrency:
 jobs:
   check:
     runs-on: ubuntu-26.04
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
@@ -29,4 +30,16 @@ jobs:
           bun-version: 1.4.4
 
       - name: Check upstream tags
-        run: bun run agentation:upstream
+        run: |
+          set +e
+          bun run agentation:upstream
+          code=$?
+          if [ "$code" -eq 1 ]; then
+            echo "::error::A newer upstream agentation tag exists; follow the pull command in the log."
+            exit 1
+          fi
+          if [ "$code" -eq 2 ]; then
+            echo "::error::The upstream check itself failed (network or parse); inspect the log."
+            exit 1
+          fi
+          exit 0

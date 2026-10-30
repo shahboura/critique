@@ -7,9 +7,9 @@ name: test
 
 on:
   push:
-    paths: ["packages/agentation/**", "cli/**", ".github/workflows/test.yml"]
+    paths: ["packages/agentation/**", "cli/**", "scripts/**", "package.json", ".github/workflows/test.yml"]
   pull_request:
-    paths: ["packages/agentation/**", "cli/**", ".github/workflows/test.yml"]
+    paths: ["packages/agentation/**", "cli/**", "scripts/**", "package.json", ".github/workflows/test.yml"]
   workflow_dispatch:
 
 permissions:
@@ -46,3 +46,13 @@ jobs:
       - name: CLI annotation API tests
         working-directory: cli
         run: bun test src/agentation-api.test.ts
+
+      - name: Upstream check script
+        run: |
+          bun test scripts/check-agentation-upstream.test.ts
+          set +e
+          bun run agentation:upstream
+          code=$?
+          # A newer tag (1) is informational here; a broken check (2) fails.
+          [ "$code" -eq 2 ] && exit 2
+          exit 0
