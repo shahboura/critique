@@ -8,6 +8,8 @@
 
 4. **Widget fixes.** Feedback on diff lines keeps its `file:line` anchor, annotations created or deleted by other reviewers appear live, Copy/Send no longer clear notes on shared sessions, and marker hitboxes, contrast, toolbar width and safe-area insets were corrected.
 
+5. **Freehand drawing stays disabled**, matching upstream agentation v3.1.2 (the previous 2.5.5 fork had enabled it). The upstream implementation removed the stroke handlers, so the control is not exposed. Porting it is tracked as a follow-up.
+
 # 0.4.2
 
 1. **Build identity.** Every generated page carries `<meta name="critique-build">`, uploads send `X-Critique-Build`, and `/a/health` reports `version` and `build`. Released CLI tarballs and the self-host image stamp the commit they were built from, so a page can say which renderer produced it instead of mixing versions silently. The comments widget URL is busted by the build id too.
