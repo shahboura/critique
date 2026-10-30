@@ -61,8 +61,11 @@ jobs:
         run: bun install --frozen-lockfile --ignore-scripts
 
       - name: Build and pack
-        working-directory: cli
         run: |
+          # worker.tsx imports @critique.work/server types, which the workspace
+          # package only exposes after it has been built.
+          bun run build:comments-server
+          cd cli
           bun run build
           bun pm pack --destination "$RUNNER_TEMP"
 
