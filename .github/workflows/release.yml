@@ -63,7 +63,8 @@ jobs:
       - name: Stamp the build id
         # git, not $GITHUB_SHA: on workflow_dispatch that is the branch head, not
         # the tag this job checked out.
-        run: printf 'export const BUILD_ID: string = "%s"\n' "$(git rev-parse HEAD)" > cli/src/build-info.ts
+        run: |
+          printf 'export const BUILD_ID: string = "%s"\n' "$(git rev-parse HEAD)" > cli/src/build-info.ts
 
       - name: Build and pack
         run: |
