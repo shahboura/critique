@@ -1,0 +1,103 @@
+# Publishes the CLI tarball as a GitHub release asset, so self-hosted consumers
+# install one exact artifact instead of `npm install -g critique@latest` (that npm
+# name belongs to a third party and cannot contain this fork's code):
+#
+#   gh release download v0.4.1 --repo <owner>/critique --pattern 'critique-*'
+#   sha256sum -c critique-0.4.1.tgz.sha256
+#   npm install -g ./critique-0.4.1.tgz
+#
+# The tarball is architecture independent (JS plus wasm), so there is no
+# per-arch build: one artifact serves amd64 and arm64 hosts.
+#
+# Release steps: bump cli/package.json, commit, `git tag v<version>`,
+# `git push --follow-tags`. The tag must match cli/package.json, because two
+# releases sharing a version produce identical asset names and silently
+# overwrite each other.
+
+name: release
+
+on:
+  push:
+    tags: ["v*", "critique@*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing tag to rebuild assets for
+        required: true
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  tarball:
+    runs-on: ubuntu-26.04
+    env:
+      TAG: ${{ inputs.tag || github.ref_name }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          ref: ${{ env.TAG }}
+
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: 1.4.4
+
+      - name: Check the tag matches cli/package.json
+        run: |
+          version=$(node -p "require('./cli/package.json').version")
+          tag_version=${TAG#critique@}
+          tag_version=${tag_version#v}
+          if [ "$tag_version" != "$version" ]; then
+            echo "::error::tag $TAG does not match cli/package.json version $version"
+            exit 1
+          fi
+          echo "VERSION=$version" >> "$GITHUB_ENV"
+
+      - name: Install
+        run: bun install --frozen-lockfile --ignore-scripts
+
+      - name: Build and pack
+        working-directory: cli
+        run: |
+          bun run build
+          bun pm pack --destination "$RUNNER_TEMP"
+
+      - name: Check the tarball is complete
+        run: |
+          tgz="$RUNNER_TEMP/critique-$VERSION.tgz"
+          test -f "$tgz"
+          # dist is the entrypoint; src/themes and public are read from disk at
+          # runtime, so a dist-only tarball breaks themes and the diff font.
+          for f in package/dist/cli.js package/src/themes/github.json package/public/jetbrains-mono-nerd.woff2; do
+            tar -tzf "$tgz" | grep -qx "$f" || { echo "::error::$f missing from the tarball"; exit 1; }
+          done
+
+      - name: Smoke install
+        run: |
+          # npm 11 blocks install scripts by default; the CLI works without the
+          # native tree-sitter builds (wasm grammars), so keep them blocked as
+          # the self-hosted image does.
+          npm install -g --ignore-scripts --prefix "$RUNNER_TEMP/prefix" "$RUNNER_TEMP/critique-$VERSION.tgz"
+          "$RUNNER_TEMP/prefix/bin/critique" --help > /dev/null
+
+      - name: Checksum
+        run: |
+          cd "$RUNNER_TEMP"
+          sha256sum "critique-$VERSION.tgz" > "critique-$VERSION.tgz.sha256"
+          cat "critique-$VERSION.tgz.sha256"
+
+      - name: Attach to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cd "$RUNNER_TEMP"
+          if gh release view "$TAG" > /dev/null 2>&1; then
+            gh release upload "$TAG" "critique-$VERSION.tgz" "critique-$VERSION.tgz.sha256" --clobber
+          else
+            gh release create "$TAG" "critique-$VERSION.tgz" "critique-$VERSION.tgz.sha256" \
+              --title "$TAG" --generate-notes
+          fi
