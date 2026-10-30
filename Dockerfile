@@ -42,7 +42,10 @@ COPY . .
 # URL carries it, so a stale widget or a mixed version is visible instead of
 # silent. Defaults to "dev" for a plain `docker build`.
 ARG BUILD_ID=dev
-RUN printf 'export const BUILD_ID = "%s"\n' "$BUILD_ID" > cli/src/build-info.ts
+# Only a plain token may reach the generated source line: anything else would
+# break the string literal or, worse, inject code into the worker bundle.
+RUN case "$BUILD_ID" in ""|*[!A-Za-z0-9._-]*) BUILD_ID=dev ;; esac; \
+    printf 'export const BUILD_ID: string = "%s"\n' "$BUILD_ID" > cli/src/build-info.ts
 
 # Never bake local secrets into the published image (defense in depth: the
 # .dockerignore patterns already exclude them).

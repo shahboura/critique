@@ -5,6 +5,7 @@ import { RGBA } from "@opentuah/core"
 import type { CapturedFrame, CapturedLine, CapturedSpan } from "@opentuah/core"
 import { slugifyFileName, buildAnchorMap, extractLineNumber, extractTreeFilePath } from "./web-utils.js"
 import { frameToHtml, frameToHtmlDocument } from "./ansi-html.js"
+import { BUILD_ID } from "./build-info.js"
 
 describe("getSpanLines rendering", () => {
   let renderer: Awaited<ReturnType<typeof createTestRenderer>>["renderer"] | null = null
@@ -509,7 +510,7 @@ describe("ansi-html document", () => {
   test("pages identify the build that rendered them", () => {
     const frame = mockFrame(["test"])
     const doc = frameToHtmlDocument(frame)
-    expect(doc).toContain('<meta name="critique-build" content="dev">')
+    expect(doc).toContain(`<meta name="critique-build" content="${BUILD_ID}">`)
   })
 
   test("scroll-to-top surfaces derive from the page colors", () => {

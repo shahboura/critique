@@ -22,9 +22,14 @@
 services:
   critique:
     # Building locally (default) — or use the image this repo's CI pushes to
-    # GHCR (linux/amd64 + linux/arm64): remove `build: .` and set
+    # GHCR (linux/amd64 + linux/arm64): remove the whole `build:` block and set
     #   image: ghcr.io/<your-github-user>/critique:latest
-    build: .
+    build:
+      context: .
+      # Identity of this deployment: /a/health and every page report it.
+      # Builds without this arrive as "dev".
+      args:
+        BUILD_ID: ${BUILD_ID:-dev}
     image: critique-selfhost
     restart: unless-stopped
     ports:

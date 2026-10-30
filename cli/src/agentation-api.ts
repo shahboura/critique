@@ -56,7 +56,11 @@ api.use("/sessions/:id/*", diffAccessGuard((c) => c.req.param("id")))
 api.use("/annotations/:id/*", diffAccessGuard((c) => parseAnnotationId(c.req.param("id") ?? "")?.sessionId))
 
 // Health check (Agentation polls this)
-api.get("/health", (c) => c.json({ status: "ok", version: pkgVersion, build: BUILD_ID }))
+api.get("/health", (c) => c.json({
+  status: "ok",
+  version: pkgVersion,
+  build: BUILD_ID,
+}))
 
 
 

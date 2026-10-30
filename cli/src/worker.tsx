@@ -13,6 +13,7 @@ import { Resend } from "resend"
 import { agentationApi } from "./agentation-api.js"
 import { annotationsContextRoute } from "./routes/annotations-context.js"
 import { BUILD_ID } from "./build-info.js"
+import { version as pkgVersion } from "../package.json"
 import {
   buildKvPutOptions,
   decodeBinaryFromKv,
@@ -529,6 +530,10 @@ app.post("/upload", async (c) => {
     // Store desktop version in KV
     await kv.setHtml(id, htmlDesktop, ttlSeconds)
 
+    // Which renderer produced this page. A mismatch across uploads means a
+    // mixed-version deployment, which is otherwise invisible.
+    logger.log("Upload", { id, build: c.req.header("X-Critique-Build") ?? "unknown" })
+
     // Store mobile version if provided
     if (htmlMobile && typeof htmlMobile === "string") {
       await kv.setMobileHtml(id, htmlMobile, ttlSeconds)
@@ -897,7 +902,7 @@ async function handleView(c: any) {
     }).replace(/</g, "\\u003c")
     const commentsSnippet = `
 <script>window.__CRITIQUE_CONFIG__=${configJson}</script>
-<script src="/agentation-widget.js?v=${BUILD_ID}"></script>`
+<script src="/agentation-widget.js?v=${encodeURIComponent(BUILD_ID === "dev" ? pkgVersion : BUILD_ID)}"></script>`
     html = html.replace("</body>", `${commentsSnippet}\n</body>`)
   }
 

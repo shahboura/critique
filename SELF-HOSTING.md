@@ -122,7 +122,8 @@ Three ways to get the image onto the server:
 git clone <your-fork> && docker compose up -d --build
 
 # b) build once, transfer the file
-docker build -t critique-selfhost . && \
+docker build --build-arg BUILD_ID=$(git rev-parse --short HEAD) \
+  -t critique-selfhost . && \
   docker save critique-selfhost | ssh server 'docker load'
 
 # c) registry — CI builds and pushes on every push to main (native
@@ -131,8 +132,13 @@ docker build -t critique-selfhost . && \
 #    image: ghcr.io/<your-github-user>/critique:latest
 #    first push creates a private package; flip it to public in the
 #    package settings if you want anonymous pulls.
-#    Then in docker-compose.yml:  delete `build: .` and set the image line.
+#    Then in docker-compose.yml:  remove the whole `build:` block and set the image line.
 ```
+
+Both local build paths stamp the deployment's identity from `BUILD_ID`, which
+`/a/health` and every generated page report. `docker compose` reads it from the
+environment (`BUILD_ID=$(git rev-parse --short HEAD) docker compose up -d --build`);
+without it the build reports `dev`. The CI image passes the commit automatically.
 
 ## 7. Updating & staying in sync with upstream
 
