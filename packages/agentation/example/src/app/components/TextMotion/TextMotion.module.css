@@ -1,0 +1,99 @@
+@layer text-motion {
+  .root {
+    position: relative;
+    display: inline-block;
+    flex-shrink: 0;
+    vertical-align: baseline;
+    white-space: nowrap;
+    font: inherit;
+    letter-spacing: inherit;
+    text-align: center;
+    &[data-align='start'] {
+      text-align: start;
+    }
+    &[data-align='end'] {
+      text-align: end;
+    }
+  }
+
+  .ruler {
+    display: inline-block;
+    width: max-content;
+    /* The inline line box already provides the height. A 1lh minimum is
+       zoomed twice by WebKit; empty labels keep their baseline below. */
+    visibility: hidden;
+    pointer-events: none;
+    /* An empty inline-block uses its bottom edge as its baseline. Keep the
+       font's baseline without adding a measurable character or layout slot. */
+    &:empty::before {
+      content: '\200b';
+    }
+  }
+
+  /* Keep the accessible label out of the visual glyph layer. */
+  .root > [data-visually-hidden] {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    border: 0;
+  }
+
+  .paint {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    text-align: inherit;
+    transform: translateX(0px);
+    will-change: var(--_TextMotion-layer-hint, transform);
+  }
+
+  .slot {
+    transform: translateX(0px);
+  }
+
+  .slot,
+  .character {
+    position: relative;
+    isolation: isolate;
+    display: inline-block;
+    white-space: pre;
+    vertical-align: baseline;
+  }
+
+  .character {
+    transform-origin: center;
+    transform: translateY(0em) scale(1) rotate(0deg);
+    filter: blur(0em);
+    will-change: var(--_TextMotion-layer-hint, transform, filter);
+  }
+
+  .base {
+    display: inline-block;
+  }
+
+  /* Optional ink decoration stays inside the animated transform and blur, so
+     a text mask cannot clip the approved motion treatment's soft edges. */
+  .surface {
+    display: inline-block;
+    position: relative;
+  }
+
+  .tint {
+    position: absolute;
+    inset: 0;
+    opacity: 0;
+  }
+
+  /* Complementary opacity on identical ink masks keeps the glyph alpha
+     unchanged. Ordinary source-over blending would thin the edges mid-mix.
+     Keep these layers after settling, with no final raster handoff. */
+  .character[data-tinted] > :is(.base, .tint),
+  .character[data-tinted] > .surface > :is(.base, .tint) {
+    mix-blend-mode: plus-lighter;
+    will-change: opacity;
+  }
+}
