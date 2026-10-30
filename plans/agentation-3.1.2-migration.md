@@ -1,8 +1,8 @@
 # Plan v2: agentation fork — duplicate fix, 3.1.2 migration, versioning
 
-Status: v2.2 — validated against HEAD `a9e5588` by an independent review lens
-(correctness + release facts), on top of the earlier planner / correctness /
-security / UI-UX reviews. Supersedes v1. Related: `plans/agentation-migration.md`.
+Status: v3 — **implemented** on branch `feat/agentation-v3` (HEAD `3064a69`).
+The vendored-workspace path superseded the fork/dist plan in §6 D5; outcome and
+remaining gaps are in §11. Supersedes v1. Related: `plans/agentation-migration.md`.
 
 ## 0. Fact corrections from review (v1 was wrong)
 
@@ -251,7 +251,11 @@ In all cases: commit `bun.lock` with integrity, and record the upstream base in
   version, `git push --follow-tags`; nothing goes to npm.
 - Add a changeset for the user-facing fix in workstream A.
 
-### D5. Artifact decision (decided)
+### D5. Artifact decision (superseded by vendoring)
+
+> Superseded: the widget is now vendored at `packages/agentation` and consumed
+> as `workspace:*`. No fork repo, `dist` branch, npm scope, or SHA pin is used.
+> The text below is kept as the decision record.
 
 Inputs: the `@critique.work` npm scope is controlled by `xmorse`, not us, so
 registry publishing is out. `shahboura/critique` is our own account
@@ -302,7 +306,9 @@ Rules:
 - Provenance chain: critique commit -> lockfile SHA -> dist commit -> source
   tag `v<upstream>-fork.<n>` -> upstream base `v3.1.2` / `7982d83a`.
 
-### D5a. Fork base
+### D5a. Fork base (superseded)
+
+> Superseded by the vendored workspace; kept for history.
 
 | Base | Repo becomes | Pros | Cons |
 |---|---|---|---|
@@ -332,24 +338,20 @@ tag `v3.1.2`.
 
 ## 7. Knowledge graph
 
-- `graphify 0.9.93`, `graph.json` schema_version 1, built 2026-10-30 from commit
-  `56f3771b`; 6,524 nodes / 7,665 edges / 1,464 communities. HEAD is `a9e5588`,
-  so the graph is **five commits behind** (`8f7ca93`, `6203ca7`, `6358259`,
-  `7bb4cbd`, `a9e5588`) and predates the release/build-id changes as well as all
-  workstream code.
+- `graphify 0.9.93`, `graph.json` schema_version 1, refreshed at `3064a69`:
+  7,575 nodes / 9,596 edges / 1,497 communities.
 - `graphify-out/` is gitignored. Graph covers code only; this plan file and
   `cli/tmp` are not nodes.
-- Refresh with `graphify update .` after code changes; the graph predates any
-  workstream A/B code, so update it before the migration review.
+- Refresh with `graphify update .` after code changes.
 
 ## 8. Decisions required
 
-1. **License**: the fork is a public redistribution of a PolyForm Shield work.
-   Attribution is solvable (keep `LICENSE`, add a widget notice, state
-   modifications). The open question is scope: does bundling it in critique.work
-   count as competing use? Record the answer before making the fork public.
-2. **Publish path — decided (D5, conditional on D6)**: fork at
-   `shahboura/agentation`, consume the `dist` branch by SHA. No npm publish.
+1. **License**: the vendored code lives in this public repo; `packages/agentation/LICENSE`
+   ships and the widget carries a notice plus `cli/public/third-party-licenses.txt`.
+   The open question is scope: does bundling it in critique.work count as
+   competing use under PolyForm Shield? Record the answer.
+2. **Publish path — superseded**: vendored workspace (`packages/agentation` +
+   `workspace:*`). No fork, dist branch, npm publish, or SHA pin.
 3. **Layout mode**: disable it in the critique build (recommended) or persist
    `kind`/`placement`/`rearrange` server-side.
 4. **Freeze button**: drop (recommended) or keep with the small patch.
@@ -404,3 +406,34 @@ build-id findings were implemented by the `0.4.2` work that landed mid-review.
 Open items 1-9 are workstream A/C scope. Items 10-11 are release mechanics (D).
 Items 12-21 are inputs to workstream B. Items 22-26 are documentation/release
 facts already folded into this plan.
+
+## 11. Outcome (implemented on `feat/agentation-v3`)
+
+Commits:
+
+| Commit | What |
+|---|---|
+| `f6f7591` | vendored upstream v3.1.2 as `packages/agentation` (subtree + prune) |
+| `76b2bf8` | id fix, anchor, SSE, server hardening, CSS, docs, changeset |
+| `3064a69` | review-gate fixes + `0.5.0` release commit |
+
+Verification at `3064a69`:
+
+- `packages/agentation`: 295/295 tests pass (27 files, serial).
+- `cli/src/agentation-api.test.ts`: 3/3.
+- Preview e2e against local `wrangler dev`: 1/1, 42 assertions (real DO + workerd SQLite).
+- Builds: package, minified widget (451 KB raw / 113 KB gzip), comments-server, CLI `tsc`; Docker build passed.
+- Knowledge graph refreshed: 7,575 nodes / 9,596 edges.
+
+Known gaps:
+
+1. Freehand drawing is disabled: upstream v3.1.2 retains the state but removed the
+   stroke handlers; enabling the button would ship a dead control. Port the 2.5.5
+   drawing implementation before re-enabling.
+2. Preview/production deploy needs `CLOUDFLARE_API_TOKEN`; browser matrix not run.
+3. `authorId` is cookie-derived, not an identity; agent thread role needs the
+   machine-wide owner secret; a predictable id can be pre-claimed.
+4. Live region inside Shadow DOM is unverified in Safari; `#to-top` can be
+   obscured while settings are open; v3 frame tracking walks the document behind
+   the 1 MB gate.
+5. `v0.5.0` is not tagged and nothing is pushed.

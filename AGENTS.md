@@ -122,6 +122,16 @@ the command review helps the user review agents diffs, reordering and splitting 
 
 this command takes a long time to run, because it uses ACP to generate the result using an LLM. so to test styles changes we will usually modify scripts/preview-review.tsx instead, which let you preview how the cli looks like. and passing --web to that script to also preview how the website looks like
 
+## agentation widget (vendored)
+
+`packages/agentation` is a git subtree of `benjitaylor/agentation` at tag `v3.1.2`, limited to upstream's `package/` directory. It is consumed as `"@critique.work/agentation": "workspace:*"` and its `dist` is gitignored.
+
+- Build it before the CLI or widget: `bun run build:agentation` (or `bun run build:comments-widget`, which builds it first).
+- Update with `git subtree pull --prefix packages/agentation https://github.com/benjitaylor/agentation.git <tag>`. The fork patches (stable ids, anchor, live SSE) sit on top and will conflict.
+- Tests: `NODE_OPTIONS=--localstorage-file=/tmp/ls.db bun run --cwd packages/agentation test --no-file-parallelism` (serial; the files share jsdom/localStorage).
+- License: PolyForm Shield 1.0.0. Keep `packages/agentation/LICENSE`; the built widget carries the notice and `/third-party-licenses.txt`.
+- Do not publish it to npm; the scope is not ours.
+
 ## opentui fork
 
 we are using an opentui fork published as `@opentuah`. imports use `@opentuah/core` and `@opentuah/react` directly (no npm alias remapping).
