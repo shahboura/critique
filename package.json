@@ -1,9 +1,11 @@
 {
   "name": "critique-workspace",
   "private": true,
-  "workspaces": ["./*"],
+  "workspaces": ["./*", "packages/*"],
   "scripts": {
-    "build:comments-widget": "bun run cli/scripts/build-widget.ts",
+    "build:agentation": "bun run --cwd packages/agentation build",
+    "test:agentation": "bun run --cwd packages/agentation test",
+    "build:comments-widget": "bun run build:agentation && bun run cli/scripts/build-widget.ts",
     "build:comments-server": "bun run --filter '@critique.work/server' build"
   }
 }

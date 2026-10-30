@@ -1,1 +1,0 @@
-Persistent glyph motion for the website downloads counter. The React wrapper keeps measurement, interruption, and presentation timing together without requiring a theme system. This is website-only code.

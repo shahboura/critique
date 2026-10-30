@@ -1,7 +1,8 @@
 {
-  "name": "agentation",
-  "version": "3.1.2",
-  "description": "Visual feedback for AI coding agents",
+  "name": "@critique.work/agentation",
+  "version": "3.1.2-fork.1",
+  "private": true,
+  "description": "Visual feedback for AI coding agents (vendored fork)",
   "sideEffects": false,
   "license": "PolyForm-Shield-1.0.0",
   "main": "./dist/index.js",
@@ -26,10 +27,8 @@
   "scripts": {
     "build": "tsup",
     "watch": "tsup --watch",
-    "dev": "pnpm build && pnpm watch",
     "test": "vitest run",
-    "test:watch": "vitest",
-    "prepublishOnly": "pnpm build"
+    "test:watch": "vitest"
   },
   "peerDependencies": {
     "react": ">=18.0.0",
