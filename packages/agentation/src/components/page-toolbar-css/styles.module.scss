@@ -274,10 +274,10 @@
     border-radius: 22px;
     // 34px controls inside a 44px pill: keep the end controls concentric.
     padding: 5px;
-    width: 297px;
+    width: min(297px, calc(100vw - 50px));
 
     &.serverConnected {
-      width: 337px;
+      width: min(337px, calc(100vw - 50px));
     }
   }
 }
@@ -2254,5 +2254,25 @@
 
   .divider {
     background: rgba(0, 0, 0, 0.1);
+  }
+}
+
+// Narrow phones: tighten the pill rather than let it overflow the viewport.
+@media (max-width: 360px) {
+  .toolbarContainer.expanded {
+    padding: 3px;
+  }
+
+  .toolbarContainer .controlsContent {
+    gap: 2px;
+  }
+
+  .toolbarContainer .controlButton {
+    width: 32px;
+    height: 32px;
+  }
+
+  .toolbarContainer .divider {
+    margin: 0 1px;
   }
 }

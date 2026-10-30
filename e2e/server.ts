@@ -8,6 +8,7 @@ const widget = Bun.file(join(root, "..", "cli", "public", "agentation-widget.js"
 
 Bun.serve({
   port: 4173,
+  hostname: "127.0.0.1",
   async fetch(request) {
     const url = new URL(request.url)
     if (url.pathname === "/" || url.pathname === "/index.html") {
@@ -20,9 +21,12 @@ Bun.serve({
       const target = `http://127.0.0.1:8787${url.pathname}${url.search}`
       const headers = new Headers(request.headers)
       headers.delete("host")
+      headers.delete("connection")
+      headers.delete("transfer-encoding")
       const upstream = await fetch(target, {
         method: request.method,
         headers,
+        signal: request.signal,
         body: request.method === "GET" || request.method === "HEAD" ? undefined : request.body,
       })
       return new Response(upstream.body, { status: upstream.status, headers: upstream.headers })

@@ -8,15 +8,21 @@ async function open(page: Page, id: string) {
 }
 
 async function activate(page: Page) {
-  const launcher = page.getByRole("button", { name: "Start feedback mode" })
-  if (await launcher.isVisible()) await launcher.click()
+  // Fresh pages always load collapsed; click and let Playwright auto-wait.
+  await page.getByRole("button", { name: "Start feedback mode" }).click()
   await expect(page.locator("[data-feedback-toolbar][data-agentation-toolbar]")).toBeVisible()
 }
 
 async function addNote(page: Page, text: string) {
+  const posted = page.waitForResponse(
+    (response) =>
+      response.url().includes("/annotations") && response.request().method() === "POST",
+  )
   await page.locator("#content .line span").first().click()
   await page.locator("[data-annotation-popup] textarea").fill(text)
   await page.getByRole("button", { name: "Add" }).click()
+  // Wait for the server round-trip so the pre-fix duplicate window is covered.
+  await posted
   await expect(page.locator("[data-annotation-marker]")).toHaveCount(1)
 }
 
@@ -62,11 +68,30 @@ test("syncs created and deleted annotations across two tabs", async ({ context }
 
 test("keeps the expanded toolbar inside a 320px viewport", async ({ page }) => {
   await page.setViewportSize({ width: 320, height: 800 })
+  await page.emulateMedia({ reducedMotion: "reduce" })
   await open(page, session())
   await activate(page)
 
-  const box = await page.locator("[data-feedback-toolbar][data-agentation-toolbar]").boundingBox()
-  expect(box).not.toBeNull()
-  expect(box!.x).toBeGreaterThanOrEqual(0)
-  expect(box!.x + box!.width).toBeLessThanOrEqual(320)
+  const metrics = await page
+    .locator("[data-feedback-toolbar][data-agentation-toolbar]")
+    .evaluate((element) => {
+      // The outer pill contains absolutely positioned tooltips; measure the
+      // actual pill body and its visible buttons instead.
+      const inner = element.querySelector<HTMLElement>('[class*="toolbarContainer"]') ?? element
+      const rect = inner.getBoundingClientRect()
+      const buttons = [...inner.querySelectorAll("button")]
+        .filter((button) => button.offsetParent !== null)
+        .map((button) => button.getBoundingClientRect().right)
+      return {
+        left: rect.left,
+        right: rect.right,
+        width: rect.width,
+        buttonRight: Math.max(...buttons, 0),
+      }
+    })
+
+  expect(metrics.width).toBeGreaterThan(200) // expanded, not the 44px launcher
+  expect(metrics.left).toBeGreaterThanOrEqual(0)
+  expect(metrics.right).toBeLessThanOrEqual(320)
+  expect(metrics.buttonRight).toBeLessThanOrEqual(320)
 })
