@@ -1,3 +1,13 @@
+# 0.6.0
+
+1. **Webhooks are off by default for self-hosted deployments.** The comments widget settings panel no longer offers a webhook URL, so annotation text cannot be pointed at a third-party endpoint. Set `CRITIQUE_WIDGET_WEBHOOKS=on` in the container environment to restore the upstream behaviour. When disabled, the manual Send control stays hidden and hidden or previously saved webhook URLs are never called.
+
+2. **Annotations on long diffs.** The comments widget was skipped for any diff whose HTML was over 1MB, so big diffs lost the annotate button entirely. The widget now mounts its UI in a shadow root, so the style recalculation cost that motivated the size gate no longer applies.
+
+3. **Pause animations button is back.** The comments toolbar has the pause/resume control from upstream again. It freezes CSS animations, Web Animations, videos and page timers so annotations do not drift on animated content. Diff pages also stop inlining the viewer's cookie id into cached HTML; the widget never used it.
+
+4. **`--open` no longer goes through a shell.** The browser is launched with an argument array, so a diff URL or PDF filename containing shell metacharacters cannot execute a command. Windows uses PowerShell instead of `cmd /c start`. Nothing changes for normal links.
+
 # 0.5.0
 
 1. **Agentation v3.1.2.** The comments widget now vendors upstream agentation v3.1.2 (`packages/agentation`, upstream commit `7982d83a`). Styling is isolated in Shadow DOM, so the widget no longer restyles the diff page. The widget is minified (451 KB raw / 113 KB gzip) and ships its license notice.
