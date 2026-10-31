@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>agentation e2e</title>
+    <style>
+      body { margin: 0; font: 14px/1.4 monospace; }
+      .line { padding: 10px 16px; border-bottom: 1px solid #e5e5e5; }
+    </style>
+  </head>
+  <body>
+    <div id="content">
+      <div class="line" data-anchor="src/example.ts:42"><span>const answer = 42</span></div>
+      <div class="line" data-anchor="src/example.ts:43"><span>console.log(answer)</span></div>
+      <div class="line" data-anchor="src/example.ts:44"><span>return answer</span></div>
+    </div>
+    <script>
+      const params = new URLSearchParams(location.search)
+      window.__CRITIQUE_CONFIG__ = {
+        endpoint: location.origin + "/a",
+        sessionId: params.get("session") || "e2e-default",
+        userId: "e2e-user",
+        showFreezeButton: false,
+      }
+    </script>
+    <script src="/agentation-widget.js"></script>
+  </body>
+</html>

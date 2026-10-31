@@ -89,6 +89,13 @@ async function init() {
       endpoint: config.endpoint,
       sessionId: config.sessionId,
       showFreezeButton: config.showFreezeButton,
+      // Static diff pages have no layout targets, and the worker does not
+      // persist placement/rearrange annotations.
+      enableLayoutMode: false,
+      // Diff pages have no same-origin frames to track; skip the document walk.
+      enableFrameTracking: false,
+      // Shared diff pages: Copy/Send must not delete other reviewers' notes.
+      autoClearSharedAnnotations: false,
     }),
     container,
   )

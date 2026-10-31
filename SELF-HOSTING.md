@@ -137,6 +137,8 @@ docker build --build-arg BUILD_ID=$(git rev-parse --short HEAD) \
 
 Release tarballs are immutable: `critique-<version>.tgz` and its sha256 belong to one commit, and the release workflow refuses to republish an existing version. Pin the version you install.
 
+The comments widget vendors agentation v3.1.2 under PolyForm Shield 1.0.0. The license text ships at `/third-party-licenses.txt` and in `packages/agentation/LICENSE`; keep both when redistributing the image or generated pages.
+
 Both local build paths stamp the deployment's identity from `BUILD_ID`, which
 `/a/health` and every generated page report. `docker compose` reads it from the
 environment (`BUILD_ID=$(git rev-parse --short HEAD) docker compose up -d --build`);

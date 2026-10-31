@@ -8,9 +8,11 @@
 // via proxyToDO() on every proxied request.
 
 import { Hono } from "hono"
+import type { Context } from "hono"
 import type { KVNamespace } from "@cloudflare/workers-types"
 import { checkDiffAccess, diffAccessGuard } from "./diff-password.js"
 import { BUILD_ID } from "./build-info.js"
+import { PATCHABLE_ANNOTATION_FIELDS as PATCHABLE_FIELDS } from "@critique.work/server/types"
 import { version as pkgVersion } from "../package.json"
 
 type Bindings = {
@@ -48,6 +50,26 @@ function parseAnnotationId(annotationId: string): { sessionId: string; rawId: st
     sessionId: annotationId.slice(0, idx),
     rawId: annotationId,
   }
+}
+
+const OWNER_SECRET_HEADER = "X-Critique-Owner-Secret"
+
+// The only server-verifiable credential here is the per-diff owner secret stored at
+// upload (`owner:<id>` in KV), the same one PATCH /upload/:id/og requires. Thread
+// replies may claim role "agent" only when that secret matches.
+async function isOwnerRequest(
+  c: Context<{ Bindings: Bindings; Variables: { userId: string } }>,
+  sessionId: string,
+): Promise<boolean> {
+  const secret = c.req.header(OWNER_SECRET_HEADER)
+  if (!secret) return false
+  const stored = await c.env.CRITIQUE_KV.get(`owner:${sessionId}`)
+  if (!stored) return false
+  // Constant-time compare; worker.tsx has the same helper but does not export it.
+  if (secret.length !== stored.length) return false
+  let diff = 0
+  for (let i = 0; i < secret.length; i++) diff |= secret.charCodeAt(i) ^ stored.charCodeAt(i)
+  return diff === 0
 }
 
 // Session IDs are diff IDs, so comments of a password protected diff need its password too.
@@ -93,16 +115,19 @@ api.get("/sessions/:id", async (c) => {
 // Create annotation within a session
 api.post("/sessions/:id/annotations", async (c) => {
   const sessionId = c.req.param("id")
-  const body = await c.req.json<Record<string, unknown>>()
+  const body = await c.req.json<Record<string, unknown>>().catch(() => null)
+  if (!body || typeof body !== "object" || typeof body.comment !== "string") {
+    return c.json({ error: "Invalid annotation body" }, 400)
+  }
 
   // Prefix annotation ID with session ID for routing
   if (typeof body.id !== "string" || !body.id.startsWith(`${sessionId}_`)) {
     body.id = `${sessionId}_${crypto.randomUUID()}`
   }
-  // Support legacy createdBy field from old clients
-  const legacyCreatedBy = typeof body.createdBy === "string" ? body.createdBy : undefined
-  body.authorId = body.authorId || legacyCreatedBy || c.get("userId")
+  // authorId comes from the authenticated context only. Client-supplied authorId
+  // and the legacy createdBy field are accepted but can never win.
   delete body.createdBy
+  body.authorId = c.get("userId")
   body.sessionId = sessionId
 
   const resp = await proxyToDO(c.env, sessionId, "https://internal/api/annotations", {
@@ -135,17 +160,34 @@ api.get("/annotations/:id", async (c) => {
   return new Response(resp.body, resp)
 })
 
+// Fields a client may PATCH. The DO merges the body into the stored row
+// ({...existing, ...partial}), so anything else would let a caller rewrite
+// server-owned data: authorId/sessionId (identity), createdAt, or thread
+// (forging a role:"agent" reply).
+// Fields a client may change after create. Shared with the DO so both trust
+// boundaries enforce the same list.
+
 // Update annotation
 api.patch("/annotations/:id", async (c) => {
   const parsed = parseAnnotationId(c.req.param("id"))
   if (!parsed) {
     return c.json({ error: "Invalid annotation ID format" }, 400)
   }
-  const body = await c.req.text()
+  const input = await c.req.json<Record<string, unknown> | null>().catch(() => null)
+  if (!input || typeof input !== "object" || Array.isArray(input)) {
+    return c.json({ error: "Invalid JSON body" }, 400)
+  }
+  const body: Record<string, unknown> = {}
+  for (const field of PATCHABLE_FIELDS) {
+    if (input[field] !== undefined) body[field] = input[field]
+  }
+  if (body.comment !== undefined && typeof body.comment !== "string") {
+    return c.json({ error: "comment must be a string" }, 400)
+  }
   const resp = await proxyToDO(c.env, parsed.sessionId, `https://internal/api/annotations/${parsed.rawId}`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
-    body,
+    body: JSON.stringify(body),
   })
   return new Response(resp.body, resp)
 })
@@ -168,11 +210,17 @@ api.post("/annotations/:id/thread", async (c) => {
   if (!parsed) {
     return c.json({ error: "Invalid annotation ID format" }, 400)
   }
-  const body = await c.req.text()
+  const body = await c.req.json<{ role?: unknown; content?: unknown } | null>().catch(() => null)
+  if (!body) {
+    return c.json({ error: "Invalid JSON body" }, 400)
+  }
+  // role is server-assigned: only the diff owner can post as an agent, everyone
+  // else is a human.
+  const role = body.role === "agent" && (await isOwnerRequest(c, parsed.sessionId)) ? "agent" : "human"
   const resp = await proxyToDO(c.env, parsed.sessionId, `https://internal/api/annotations/${parsed.rawId}/thread`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body,
+    body: JSON.stringify({ ...body, role }),
   })
   return new Response(resp.body, resp)
 })

@@ -442,3 +442,5 @@ Sponsored by [CodeRabbit](https://coderabbit.link/remorses).
 ## License
 
 MIT
+
+The bundled comments widget includes code from [agentation](https://github.com/benjitaylor/agentation) under PolyForm Shield 1.0.0. Its license ships in `packages/agentation/LICENSE` and at `/third-party-licenses.txt`.

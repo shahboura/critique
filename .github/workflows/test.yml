@@ -1,0 +1,80 @@
+# Build and test the vendored agentation fork on every change to it or to the
+# CLI/widget that consumes it. The idempotent-create and id race fixes live in
+# this package, and its dist is gitignored, so neither type checking nor the
+# widget bundle works on a clean checkout until it is built.
+
+name: test
+
+on:
+  push:
+    paths: ["packages/agentation/**", "cli/**", "comments-server/**", "scripts/**", "e2e/**", "playwright.config.ts", "package.json", "bun.lock", ".github/workflows/test.yml"]
+  pull_request:
+    paths: ["packages/agentation/**", "cli/**", "comments-server/**", "scripts/**", "e2e/**", "playwright.config.ts", "package.json", "bun.lock", ".github/workflows/test.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: test-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  agentation:
+    runs-on: ubuntu-26.04
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: 1.4.4
+
+      - name: Install
+        run: bun install --frozen-lockfile --ignore-scripts
+
+      - name: Build the vendored package
+        run: bun run build:agentation
+
+      - name: Build the comments server
+        run: bun run build:comments-server
+
+      # Serial: the widget tests share jsdom globals and localStorage state, and
+      # Node 26 has no --localstorage-file default location outside the runner
+      # temp dir. Both flags are the local workaround for the same failures.
+      - name: Widget tests
+        env:
+          NODE_OPTIONS: --localstorage-file=${{ runner.temp }}/localstorage.db
+        run: bun run --cwd packages/agentation test --no-file-parallelism
+
+      - name: CLI annotation API tests
+        working-directory: cli
+        run: bun test src/agentation-api.test.ts
+
+      - name: Upstream check script
+        run: |
+          bun test scripts/check-agentation-upstream.test.ts
+          set +e
+          bun run agentation:upstream
+          code=$?
+          # A newer tag (1) is informational here; a broken check (2) fails.
+          [ "$code" -eq 2 ] && exit 2
+          exit 0
+
+  widget-e2e:
+    runs-on: ubuntu-26.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: 1.4.4
+
+      - name: Install
+        run: bun install --frozen-lockfile --ignore-scripts
+
+      - name: Install Chromium
+        run: bunx playwright install --with-deps chromium
+
+      - name: Widget e2e
+        run: bun run e2e

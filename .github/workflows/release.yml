@@ -80,9 +80,12 @@ jobs:
 
       - name: Build and pack
         run: |
-          # worker.tsx imports @critique.work/server types, which the workspace
-          # package only exposes after it has been built.
+          # worker.tsx imports @critique.work/server types, and
+          # cli/src/agentation-widget.tsx imports @critique.work/agentation.
+          # Both are workspace packages whose dist is gitignored, so a clean
+          # checkout has no types to resolve until they are built.
           bun run build:comments-server
+          bun run build:agentation
           cd cli
           bun run build
           bun pm pack --destination "$RUNNER_TEMP"
@@ -93,9 +96,16 @@ jobs:
           test -f "$tgz"
           # dist is the entrypoint; src/themes and public are read from disk at
           # runtime, so a dist-only tarball breaks themes and the diff font.
-          for f in package/dist/cli.js package/dist/build-info.js package/src/themes/github.json package/public/jetbrains-mono-nerd.woff2; do
+          # public/third-party-licenses.txt is the license the widget banner points at.
+          for f in package/dist/cli.js package/dist/build-info.js package/src/themes/github.json package/public/jetbrains-mono-nerd.woff2 package/public/third-party-licenses.txt; do
             tar -tzf "$tgz" | grep -qx "$f" || { echo "::error::$f missing from the tarball"; exit 1; }
           done
+          # The widget wrapper's tsc output is dead for CLI users; the bundled
+          # widget is built at deploy time and must never leak into the tarball.
+          if tar -tzf "$tgz" | grep -q "package/dist/agentation-widget"; then
+            echo "::error::dead agentation-widget output leaked into the tarball"
+            exit 1
+          fi
 
       - name: Smoke install
         run: |

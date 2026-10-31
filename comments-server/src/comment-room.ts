@@ -7,17 +7,20 @@
 // plus SSE streaming for real-time updates.
 
 import { Agent } from "agents"
-import type {
-  RoomState,
-  Annotation,
-  ThreadMessage,
-  AgentationEvent,
-  ActionRequestedPayload,
+import {
+  PATCHABLE_ANNOTATION_FIELDS,
+  type RoomState,
+  type Annotation,
+  type ThreadMessage,
+  type AgentationEvent,
+  type ActionRequestedPayload,
 } from "./types.js"
 
 interface CommentRoomEnv {
   [key: string]: unknown
 }
+
+const MAX_THREAD_CONTENT_LENGTH = 10_000
 
 export class CommentRoom extends Agent<CommentRoomEnv, RoomState> {
   initialState: RoomState = { annotations: [] }
@@ -126,10 +129,20 @@ export class CommentRoom extends Agent<CommentRoomEnv, RoomState> {
       updatedAt: now,
     }
 
-    this.sql`
+    // Idempotent create: a retried POST with the same id keeps the first row and
+    // must not duplicate in-memory state or emit a second annotation.created.
+    const inserted = this.sql<{ id: string }>`
       INSERT INTO annotations (id, timestamp, status, data)
       VALUES (${annotation.id}, ${annotation.timestamp}, ${annotation.status ?? null}, ${JSON.stringify(annotation)})
+      ON CONFLICT(id) DO NOTHING
+      RETURNING id
     `
+
+    if (inserted.length === 0) {
+      const existing = this.loadAnnotation(annotation.id)
+      if (!existing) throw new Error(`Annotation ${annotation.id} not found`)
+      return existing
+    }
 
     this.setState({
       annotations: [...this.state.annotations, annotation],
@@ -145,8 +158,15 @@ export class CommentRoom extends Agent<CommentRoomEnv, RoomState> {
       throw new Error(`Annotation ${id} not found`)
     }
 
+    // The public proxy already filters, but the DO is a trust boundary too:
+    // identity, session, thread and timestamps must not be client-writable.
+    const allowed = new Set<string>(PATCHABLE_ANNOTATION_FIELDS)
+    const patch = Object.fromEntries(
+      Object.entries(partial).filter(([key]) => allowed.has(key)),
+    ) as Partial<Annotation>
+
     const now = new Date().toISOString()
-    const updated: Annotation = { ...existing, ...partial, id, updatedAt: now }
+    const updated: Annotation = { ...existing, ...patch, id, updatedAt: now }
 
     this.sql`
       UPDATE annotations
@@ -181,6 +201,15 @@ export class CommentRoom extends Agent<CommentRoomEnv, RoomState> {
   }
 
   addThreadMessage(annotationId: string, input: { role: "human" | "agent"; content: string }): ThreadMessage {
+    // Thread messages are rendered as markdown for agents, so keep both fields
+    // inside the shapes the UI expects. Throwing TypeError maps to HTTP 400.
+    if (input?.role !== "human" && input?.role !== "agent") {
+      throw new TypeError("role must be \"human\" or \"agent\"")
+    }
+    if (typeof input.content !== "string" || input.content.length === 0 || input.content.length > MAX_THREAD_CONTENT_LENGTH) {
+      throw new TypeError(`content must be a non-empty string of at most ${MAX_THREAD_CONTENT_LENGTH} characters`)
+    }
+
     const existing = this.loadAnnotation(annotationId)
     if (!existing) {
       throw new Error(`Annotation ${annotationId} not found`)
@@ -343,12 +372,18 @@ export class CommentRoom extends Agent<CommentRoomEnv, RoomState> {
   }
 
   private async handleThreadPost(annotationId: string, request: Request): Promise<Response> {
+    const body = await request
+      .json<{ role: "human" | "agent"; content: string } | null>()
+      .catch(() => null)
+    if (!body) {
+      return Response.json({ error: "Invalid JSON body" }, { status: 400 })
+    }
     try {
-      const body = await request.json() as { role: "human" | "agent"; content: string }
       const msg = this.addThreadMessage(annotationId, body)
       return Response.json(msg, { status: 201 })
     } catch (error) {
-      return Response.json({ error: (error as Error).message }, { status: 404 })
+      const status = error instanceof TypeError ? 400 : 404
+      return Response.json({ error: (error as Error).message }, { status })
     }
   }
 

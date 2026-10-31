@@ -26,12 +26,16 @@ WORKDIR /app
 COPY package.json bun.lock ./
 COPY cli/package.json cli/package.json
 COPY comments-server/package.json comments-server/package.json
+# The CLI depends on @critique.work/agentation (workspace:*), so its manifest is
+# part of the workspace set the lockfile pins; without it a frozen install
+# cannot resolve the workspace link.
+COPY packages/agentation/package.json packages/agentation/package.json
 # Skip lifecycle scripts: every package in this image that would compile a native
 # binding (tree-sitter grammars, node-pty, sharp, @parcel/watcher) is trimmed
 # below anyway, and Bun's arm64 node-gyp fallback downloads `node-gyp@latest`
 # during install, which flakes in CI. esbuild uses its prebuilt optional package,
 # and workerd's bin is a JS launcher that resolves @cloudflare/workerd-<platform>.
-RUN bun install --ignore-scripts
+RUN bun install --ignore-scripts --frozen-lockfile
 
 # Fail fast if a future lockfile bump moves wrangler's entry point (used by CMD).
 RUN test -f cli/node_modules/wrangler/bin/wrangler.js
@@ -51,8 +55,9 @@ RUN case "$BUILD_ID" in ""|*[!A-Za-z0-9._-]*) BUILD_ID=dev ;; esac; \
 # .dockerignore patterns already exclude them).
 RUN test -z "$(find . -name '.env*' -not -path '*/node_modules/*' -not -name '*.example' -print -quit)"
 
-# Build the two gitignored artifacts the worker needs:
-#  - cli/public/agentation-widget.js  comments widget (static asset)
+# Build the gitignored artifacts the worker needs:
+#  - cli/public/agentation-widget.js  comments widget (static asset); the script
+#                                     builds the vendored packages/agentation first
 #  - comments-server/dist             CommentRoom Durable Object
 RUN bun run build:comments-widget && bun run build:comments-server
 
@@ -69,6 +74,9 @@ RUN bun -e 'import fs from "node:fs"; const cfg = JSON.parse(fs.readFileSync("cl
 # ones (e.g. miniflare's unused sharp/images path) would only surface if that
 # feature is used — if either happens, delete the entry from the list.
 RUN cd node_modules/.bun && rm -rf typescript@* @cloudflare+workers-types@* @opentuah+* tree-sitter* web-tree-sitter@* three@* bun-webgpu* @img+* sharp@* core-js@* react-devtools-core@* planck@* prettier@* pdfkit@* tuistory@* calldiff@* goke@* @agentclientprotocol+sdk@* @parcel+watcher* ghostty-opentui@* jimp@* @jimp+* stage-js@* yoga-layout@* kill-port-process@* pid-from-port@* execa@0.9.0* cross-spawn@5.1.0* file-type@16* diff@8.0.2* node-pty@*
+
+# The vendored widget's build and test toolchain is build-time only.
+RUN cd node_modules/.bun && rm -rf tsup@* vitest@* jsdom@* sass@* postcss@* postcss-modules@* esbuild-sass-plugin@* @vitejs+plugin-react@* @testing-library+* @types+react@* @types+react-dom@* @types+node@*
 
 # --- runtime stage: plain Node, because `wrangler dev` hangs when run by bun ---
 FROM node:26-slim
