@@ -138,3 +138,10 @@ A separate route at `GET /v/:id/annotations` that returns all annotations for a 
 - `RESEND_API_KEY`, `RESEND_FROM` — email (license delivery)
 
 These are shared between preview and production environments.
+
+**Self-hosted widget flags** (container environment, not secrets):
+
+- `CRITIQUE_WIDGET_WEBHOOKS` — `on` shows the widget's webhook settings and
+  allows auto/manual delivery. Off by default: with a URL configured the widget
+  POSTs annotation text, page context and the diff URL to it. The container
+  rejects values other than `on/off/true/false/1/0`.

@@ -13,6 +13,11 @@ echo 'PUBLIC_URL=https://diff.example.com' > .env     # your public origin
 docker compose up -d --build
 ```
 
+The comments widget's webhook settings are **off** by default, so annotation
+text cannot be pointed at a third-party URL. To restore the upstream settings
+panel and allow auto/manual webhook delivery, add
+`CRITIQUE_WIDGET_WEBHOOKS=on` to that `.env` (see §4).
+
 Point your reverse proxy at `127.0.0.1:8787` (see §3), then verify:
 
 ```bash
