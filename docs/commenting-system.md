@@ -16,9 +16,7 @@ Browser                        Cloudflare Worker               Durable Object
   GET /v/<id>  ──────────────>  handleView()                  
                                   │                            
                                   ├─ Fetch HTML from KV        
-                                  ├─ Size check (< 1MB?)       
-                                  │   YES: inject widget       
-                                  │   NO:  skip widget         
+                                  ├─ Inject widget script      
                                   └─ Stream response           
                                                               
   Widget loads ───────────────> GET /agentation-widget.js      
@@ -38,14 +36,14 @@ Browser                        Cloudflare Worker               Durable Object
 
 ## Request flow
 
-**1. Page load** — When a user visits `/v/<id>`, the worker's `handleView()` fetches the diff HTML from KV. If the HTML is under 1MB, it injects two things before `</body>`:
+**1. Page load** — When a user visits `/v/<id>`, the worker's `handleView()` fetches the diff HTML from KV and injects two things before `</body>`:
 
 ```html
 <script>window.__CRITIQUE_CONFIG__={"endpoint":"https://critique.work/a","sessionId":"<id>","userId":"<cookie>"}</script>
 <script src="/agentation-widget.js"></script>
 ```
 
-Large diffs (> 1MB) skip widget injection entirely. Agentation's CSS (365 rules) causes Safari to re-evaluate style matching on all DOM nodes, which is prohibitively slow on diffs with 185K+ elements.
+Every diff gets the widget, including the multi-megabyte ones: its UI and styles live in Shadow DOM, so it does not trigger selector matching across the diff's 185K+ elements.
 
 **2. Widget init** — `agentation-widget.js` is a bundled React app (`cli/src/agentation-widget.tsx`). On load it:
 
@@ -114,9 +112,7 @@ A separate route at `GET /v/:id/annotations` that returns all annotations for a 
 
 **content-visibility** — The base CSS in `ansi-html.ts` includes `content-visibility: auto` on `.line` elements so the browser skips layout/paint for off-screen lines. Disabled on iOS Safari via `@supports (-webkit-touch-callout: none)` due to rendering issues.
 
-**Shadow DOM style isolation** — Agentation v3 renders its toolbar and styles in Shadow DOM, so the host page's CSS does not affect the widget and the widget's CSS does not trigger selector matching across the diff's 185K descendants.
-
-**Size-gated widget** — Agentation is only injected on diffs under 1MB HTML. Large diffs skip the widget entirely to avoid any CSS/JS overhead.
+**Shadow DOM style isolation** — Agentation v3 renders its toolbar and styles in Shadow DOM, so the host page's CSS does not affect the widget and the widget's CSS does not trigger selector matching across the diff's 185K descendants. This is why the widget can be injected on every diff, however large.
 
 ## Packages
 

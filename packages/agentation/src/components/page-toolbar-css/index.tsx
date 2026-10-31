@@ -372,6 +372,8 @@ export type PageFeedbackToolbarCSSProps = {
   enableFrameTracking?: boolean;
   /** Let Copy/Send clear annotations in a shared session. Defaults to true; multi-reviewer hosts should set false. */
   autoClearSharedAnnotations?: boolean;
+  /** Allow the settings panel to configure webhooks. Defaults to true. */
+  enableWebhooks?: boolean;
 };
 
 /** Alias for PageFeedbackToolbarCSSProps */
@@ -425,6 +427,7 @@ function PageFeedbackToolbarForRoute({
   enableLayoutMode = true,
   enableFrameTracking = true,
   autoClearSharedAnnotations = true,
+  enableWebhooks = true,
 }: PageFeedbackToolbarCSSProps & {
   pathname: string;
   activeState: [boolean, Dispatch<SetStateAction<boolean>>];
@@ -2682,6 +2685,9 @@ function PageFeedbackToolbarForRoute({
       force?: boolean,
     ): Promise<boolean> => {
       // Settings webhookUrl overrides prop
+      // Skip if the host disabled webhooks, has no URL, or has them disabled
+      // (unless force is true for manual sends)
+      if (!enableWebhooks) return false;
       const targetUrl = settings.webhookUrl || webhookUrl;
       // Skip if no URL, or if webhooks disabled (unless force is true for manual sends)
       if (!targetUrl || (!settings.webhooksEnabled && !force)) return false;
@@ -2704,7 +2710,7 @@ function PageFeedbackToolbarForRoute({
         return false;
       }
     },
-    [webhookUrl, settings.webhookUrl, settings.webhooksEnabled],
+    [enableWebhooks, webhookUrl, settings.webhookUrl, settings.webhooksEnabled],
   );
 
   // Add annotation
@@ -3277,7 +3283,8 @@ function PageFeedbackToolbarForRoute({
   // onSubmit callback, or a webhook target (prop or settings) with auto-send
   // off. Without this, onSubmit-only consumers can never reach the button.
   const hasWebhookTarget =
-    isValidUrl(settings.webhookUrl) || isValidUrl(webhookUrl || "");
+    enableWebhooks &&
+    (isValidUrl(settings.webhookUrl) || isValidUrl(webhookUrl || ""));
   const canSend =
     onSubmit != null || (hasWebhookTarget && !settings.webhooksEnabled);
   // Match the CSS surface widths; MCP status does not control Send visibility.
@@ -4228,6 +4235,7 @@ function PageFeedbackToolbarForRoute({
                 connectionStatus={connectionStatus}
                 endpoint={endpoint}
                 autoClearSharedAnnotations={autoClearSharedAnnotations}
+                enableWebhooks={enableWebhooks}
                 onExited={finishSettingsExit}
                 isOpen={isActive && showSettings}
                 toolbarNearBottom={!!toolbarPosition && toolbarPosition.y < 230}

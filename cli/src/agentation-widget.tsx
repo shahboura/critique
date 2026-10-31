@@ -5,7 +5,7 @@
 // This is used by pages that don't have React (e.g., critique's static diff pages).
 //
 // Usage: inject into HTML before </body>:
-//   <script>window.__CRITIQUE_CONFIG__ = { endpoint: "https://critique.work/a", sessionId: "abc123", userId: "user-1" }</script>
+//   <script>window.__CRITIQUE_CONFIG__ = { endpoint: "https://critique.work/a", sessionId: "abc123" }</script>
 //   <script src="/agentation-widget.js"></script>
 //
 // Performance optimization:
@@ -24,9 +24,10 @@
 interface CritiqueConfig {
   endpoint: string
   sessionId: string
-  userId: string
   /** Whether to show the pause/resume animations button. Defaults to true. */
   showFreezeButton?: boolean
+  /** Whether the settings panel may configure webhooks. Defaults to false. */
+  enableWebhooks?: boolean
 }
 
 function injectContentVisibility() {
@@ -89,6 +90,9 @@ async function init() {
       endpoint: config.endpoint,
       sessionId: config.sessionId,
       showFreezeButton: config.showFreezeButton,
+      // Webhooks allow annotation data to leave the deployment, so they stay
+      // off unless the operator sets CRITIQUE_WIDGET_WEBHOOKS=on.
+      enableWebhooks: config.enableWebhooks ?? false,
       // Static diff pages have no layout targets, and the worker does not
       // persist placement/rearrange annotations.
       enableLayoutMode: false,

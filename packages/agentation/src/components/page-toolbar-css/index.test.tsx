@@ -370,6 +370,7 @@ describe("manual submission", () => {
     { label: "manual settings webhook", props: {}, settings: { webhookUrl: "https://example.test/hook", webhooksEnabled: false }, canSend: true },
     { label: "auto-send webhook", props: { webhookUrl: "https://example.test/hook" }, settings: {}, canSend: false },
     { label: "callback with auto-send webhook", props: { webhookUrl: "https://example.test/hook", onSubmit: vi.fn() }, settings: {}, canSend: true },
+    { label: "webhooks disabled by the host", props: { webhookUrl: "https://example.test/hook", enableWebhooks: false }, settings: { webhooksEnabled: false }, canSend: false },
   ])("exposes manual Send for $label only when usable", ({ props, settings, canSend }) => {
     const send = setup(props, settings);
     expect(send.disabled).toBe(!canSend);

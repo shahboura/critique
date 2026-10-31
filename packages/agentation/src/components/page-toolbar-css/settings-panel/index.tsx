@@ -23,6 +23,8 @@ export type SettingsPanelProps = {
   endpoint?: string;
   /** Hide the Clear on copy/send control in shared sessions. Defaults to true. */
   autoClearSharedAnnotations?: boolean;
+  /** Show the webhook settings. Defaults to true. */
+  enableWebhooks?: boolean;
 
   onExited: () => void;
   isOpen: boolean;
@@ -45,6 +47,7 @@ export const SettingsPanel = memo(function SettingsPanel({
   connectionStatus,
   endpoint,
   autoClearSharedAnnotations = true,
+  enableWebhooks = true,
   onExited,
   isOpen,
   toolbarNearBottom,
@@ -261,7 +264,7 @@ export const SettingsPanel = memo(function SettingsPanel({
               onSettingsPageChange("automations");
             }}
           >
-            <span>Manage MCP & Webhooks</span>
+            <span>{enableWebhooks ? "Manage MCP & Webhooks" : "Manage MCP"}</span>
             <span className={styles.settingsNavLinkRight}>
               {endpoint && connectionStatus !== "disconnected" && (
                 <span
@@ -304,7 +307,7 @@ export const SettingsPanel = memo(function SettingsPanel({
             }}
           >
             <IconChevronLeft size={16} />
-            <span>Manage MCP & Webhooks</span>
+            <span>{enableWebhooks ? "Manage MCP & Webhooks" : "Manage MCP"}</span>
           </button>
 
           <div className={styles.divider}></div>
@@ -345,12 +348,14 @@ export const SettingsPanel = memo(function SettingsPanel({
             </p>
           </div>
 
-          <div className={styles.divider}></div>
+          {enableWebhooks && (
+            <>
+              <div className={styles.divider}></div>
 
-          {/* Webhooks section */}
-          <div
-            className={`${styles.settingsSection} ${styles.settingsSectionGrow}`}
-          >
+              {/* Webhooks section */}
+              <div
+                className={`${styles.settingsSection} ${styles.settingsSectionGrow}`}
+              >
             <div className={styles.settingsRow}>
               <span className={styles.automationHeader}>
                 Webhooks
@@ -387,7 +392,9 @@ export const SettingsPanel = memo(function SettingsPanel({
               onKeyDown={(e) => e.stopPropagation()}
               onChange={(e) => onSettingsChange({ webhookUrl: e.target.value })}
             />
-          </div>
+              </div>
+            </>
+          )}
         </div>
       </div>
     </div>
