@@ -366,10 +366,7 @@ async function sendLicenseEmail(
   const apiKey = env.RESEND_API_KEY
   const from = env.RESEND_FROM
   if (!apiKey || !from) {
-    logger.log("Resend not configured; skipping email", {
-      hasApiKey: Boolean(apiKey),
-      hasFrom: Boolean(from),
-    })
+    logger.log("Resend not configured; skipping email (set RESEND_API_KEY and RESEND_FROM)")
     return
   }
 

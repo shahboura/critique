@@ -2,7 +2,7 @@
 // Renders diff components using opentui test renderer, converts to HTML with responsive layout,
 // and uploads desktop/mobile versions for shareable diff viewing.
 
-import { exec } from "child_process"
+import { execFile } from "child_process"
 import { promisify } from "util"
 import fs from "fs"
 import { tmpdir } from "os"
@@ -16,7 +16,7 @@ import { loadStoredLicenseKey, loadOrCreateOwnerSecret } from "./license.js"
 import { BUILD_ID } from "./build-info.js"
 import type { CallDiffByFile } from "./calldiff.js"
 
-const execAsync = promisify(exec)
+const execFileAsync = promisify(execFile)
 
 // Worker URL for uploading HTML previews
 export const WORKER_URL = process.env.CRITIQUE_WORKER_URL || "https://critique.work"
@@ -1054,13 +1054,18 @@ export async function uploadOgImage(id: string, ogImage: Buffer): Promise<void> 
 export async function openInBrowser(url: string): Promise<void> {
   try {
     if (process.platform === "darwin") {
-      await execAsync(`open "${url}"`)
+      await execFileAsync("open", [url])
     } else if (process.platform === "win32") {
-      // On Windows, `start` treats the first quoted arg as a window title,
-      // so pass an empty title before the URL
-      await execAsync(`cmd /c start "" "${url}"`)
+      // PowerShell instead of `cmd /c start`: no shell layer to re-parse the URL.
+      // Single-quoted string, with '' escaping an embedded quote.
+      await execFileAsync("powershell.exe", [
+        "-NoProfile",
+        "-NonInteractive",
+        "-Command",
+        `Start-Process '${url.replace(/'/g, "''")}'`,
+      ])
     } else {
-      await execAsync(`xdg-open "${url}"`)
+      await execFileAsync("xdg-open", [url])
     }
   } catch {
     // Silent fail - user can copy URL manually
