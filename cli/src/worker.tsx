@@ -11,6 +11,7 @@ import type { KVNamespace } from "@cloudflare/workers-types"
 import Stripe from "stripe"
 import { Resend } from "resend"
 import { agentationApi } from "./agentation-api.js"
+import { readWidgetOptions } from "./widget-options.js"
 import { annotationsContextRoute } from "./routes/annotations-context.js"
 import { BUILD_ID } from "./build-info.js"
 import { version as pkgVersion } from "../package.json"
@@ -46,6 +47,7 @@ type Bindings = {
   STRIPE_SECRET_KEY: string
   STRIPE_WEBHOOK_SECRET: string
   PUBLIC_URL?: string
+  CRITIQUE_WIDGET_WEBHOOKS?: string
   RESEND_API_KEY?: string
   RESEND_FROM?: string
   CommentRoom: { idFromName(name: string): { toString(): string }; get(id: any): { fetch(request: Request): Promise<Response> } }
@@ -887,24 +889,21 @@ async function handleView(c: any) {
     return c.text("Not found", 404)
   }
 
-  // Only inject agentation widget for small diffs (< 1MB HTML).
-  // Large diffs have 185K+ DOM nodes and agentation's CSS causes Safari
-  // to choke on style recalculation. Small diffs load fine with it.
-  if (html.length < 1_000_000) {
-    const userId = c.get("userId") || "anonymous"
-    const origin = getPublicUrl(c)
-    // Escape < to \u003c to prevent XSS via </script> sequences in JSON values
-    const configJson = JSON.stringify({
-      endpoint: origin + "/a",
-      sessionId: id,
-      userId,
-      showFreezeButton: false,
-    }).replace(/</g, "\\u003c")
-    const commentsSnippet = `
+  // The widget mounts its UI in a shadow root, so it no longer causes the
+  // style recalculation storm on large diffs that the old v2 bundle did.
+  // Long diffs keep the annotation button.
+  const origin = getPublicUrl(c)
+  // Escape < to \u003c to prevent XSS via </script> sequences in JSON values
+  const configJson = JSON.stringify({
+    endpoint: origin + "/a",
+    sessionId: id,
+    showFreezeButton: true,
+    enableWebhooks: readWidgetOptions(c.env).webhooks,
+  }).replace(/</g, "\\u003c")
+  const commentsSnippet = `
 <script>window.__CRITIQUE_CONFIG__=${configJson}</script>
 <script src="/agentation-widget.js?v=${encodeURIComponent(BUILD_ID === "dev" ? pkgVersion : BUILD_ID)}"></script>`
-    html = html.replace("</body>", `${commentsSnippet}\n</body>`)
-  }
+  html = html.replace("</body>", `${commentsSnippet}\n</body>`)
 
   // Stream the HTML content for faster initial load
   return stream(c, async (s) => {

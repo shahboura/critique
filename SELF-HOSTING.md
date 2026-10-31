@@ -13,6 +13,11 @@ echo 'PUBLIC_URL=https://diff.example.com' > .env     # your public origin
 docker compose up -d --build
 ```
 
+The comments widget's webhook settings are **off** by default, so annotation
+text cannot be pointed at a third-party URL. To restore the upstream settings
+panel and allow auto/manual webhook delivery, add
+`CRITIQUE_WIDGET_WEBHOOKS=on` to that `.env` (see §4).
+
 Point your reverse proxy at `127.0.0.1:8787` (see §3), then verify:
 
 ```bash
@@ -92,6 +97,7 @@ besides 8787).
 | Setting | Where | Notes |
 | --- | --- | --- |
 | `PUBLIC_URL` | `.env` / compose | Public origin used in returned links, og:image tags and the comments endpoint. **Required when serving over https** — a bare `scheme://host`, no path. If unset, links fall back to the request `Host` header (http). |
+| `CRITIQUE_WIDGET_WEBHOOKS` | `.env` / compose | `off` by default. The comments widget can point at any URL and send annotation text, page context and the diff URL there; leave it off unless you want that. Set to `on` to show the Webhooks settings and allow auto/manual send. Invalid values make the container exit instead of guessing. |
 | Port | compose | Bound to `127.0.0.1:8787` by default, meant for a local reverse proxy. |
 | Volume | compose | `critique-data:/data` — KV + comments persistence. |
 

@@ -45,3 +45,16 @@ it("hides Clear on copy/send when a shared session disables it", () => {
   expect(screen.queryByRole("checkbox", { name: "Clear on copy/send" })).toBeNull();
   expect(screen.getByRole("checkbox", { name: "Block page interactions" })).toBeTruthy();
 });
+
+it("shows the webhook field when the host allows webhooks", () => {
+  render(<SettingsPanel {...props} settingsPage="automations" />);
+  expect(screen.getByLabelText("Webhook URL")).toBeTruthy();
+});
+
+it("hides the webhook field but keeps MCP when webhooks are disabled", () => {
+  render(
+    <SettingsPanel {...props} settingsPage="automations" enableWebhooks={false} />,
+  );
+  expect(screen.queryByLabelText("Webhook URL")).toBeNull();
+  expect(screen.getByText("MCP Connection")).toBeTruthy();
+});

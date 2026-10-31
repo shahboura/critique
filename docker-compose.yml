@@ -41,6 +41,10 @@ services:
       # widget blocked as mixed content. Can live in a .env file next to this
       # file; do not reuse the upstream value shipped in .env.example.
       PUBLIC_URL: ${PUBLIC_URL:-}
+      # Webhooks let a viewer point the comments widget at any URL and send
+      # annotation data there, so they are off by default. Set to "on" to
+      # restore the upstream settings panel and manual/auto send.
+      CRITIQUE_WIDGET_WEBHOOKS: ${CRITIQUE_WIDGET_WEBHOOKS:-}
     volumes:
       # Uploaded diffs (KV) and comments (Durable Objects) persist here.
       # Links expire after 7 days (permanent links need a license key from
