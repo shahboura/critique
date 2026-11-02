@@ -1,0 +1,16 @@
+# Must be `bun`, not `npm`: with npm semantics Dependabot only edits package.json
+# and leaves bun.lock stale, so every PR fails CI's `bun install --frozen-lockfile`.
+# One entry at / covers the whole workspace (cli, comments-server, packages/*),
+# because they all resolve from the root lockfile.
+# Note: Dependabot has no security updates for bun, only version updates.
+version: 2
+updates:
+  - package-ecosystem: "bun"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    # Batch routine bumps into one PR; majors still open individually for review.
+    groups:
+      bun-minor-and-patch:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
