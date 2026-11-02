@@ -425,10 +425,11 @@ describe("--stdin pager mode (lazygit issue #25)", () => {
 
     expect(trimmed).toMatchInlineSnapshot(`
       "
-                                                 └── unknown ()
+                                               └── b
+                                                   └── logo.png ()
 
 
-       unknown +0-0"
+       a/logo.png → b/logo.png +0-0"
     `)
 
     expect(trimmed).not.toContain("URL is private")
