@@ -57,7 +57,7 @@
     "react": "^19.3.1",
     "string-dedent": "^3.0.2",
     "strip-ansi": "^7.2.0",
-    "supports-color": "^10.2.2",
+    "supports-color": "^11.0.0",
     "zustand": "^5.0.16"
   },
   "optionalDependencies": {
