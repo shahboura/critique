@@ -1,3 +1,9 @@
+# 0.6.1
+
+1. **Binary diffs show their paths.** The tree and summary used to read `unknown` for `Binary files a/logo.png and b/logo.png differ`, because the patch parser discarded both sides of the pair. It now resolves them, so the tree shows `b/logo.png` and the summary reads `a/logo.png → b/logo.png +0-0`. Text diffs render exactly as before.
+
+2. **Dependency refresh.** vitest 2 → 5, esbuild 0.28, sharp 0.35 and range updates across the CLI, the comments server and the vendored comments widget, which also moves its build to tsup 9. This clears the six open Dependabot advisories; all of them were in development tooling, so nothing changes for the shipped binary. CI now runs `tsc` on the CLI, so a dependency whose types change cannot publish an uncompilable release.
+
 # 0.6.0
 
 1. **Webhooks are off by default for self-hosted deployments.** The comments widget settings panel no longer offers a webhook URL, so annotation text cannot be pointed at a third-party endpoint. Set `CRITIQUE_WIDGET_WEBHOOKS=on` in the container environment to restore the upstream behaviour. When disabled, the manual Send control stays hidden and hidden or previously saved webhook URLs are never called.
