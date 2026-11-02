@@ -1,3 +1,7 @@
+# 0.6.2
+
+1. **`critique web "<title>"` explains itself.** The deprecated subcommand reads its first argument as a git ref, so a page title failed deep inside git with `fatal: ambiguous argument 'my title'`, followed by a stack trace. It now says the argument must be a ref and shows `critique web --title "<title>"` and `critique --web "<title>"`. Valid refs, ranges and every other git error behave exactly as before.
+
 # 0.6.1
 
 1. **Binary diffs show their paths.** The tree and summary used to read `unknown` for `Binary files a/logo.png and b/logo.png differ`, because the patch parser discarded both sides of the pair. It now resolves them, so the tree shows `b/logo.png` and the summary reads `a/logo.png → b/logo.png +0-0`. Text diffs render exactly as before.
