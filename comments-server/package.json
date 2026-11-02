@@ -15,11 +15,11 @@
   },
   "dependencies": {
     "agents": "^0.6.0",
-    "hono": "^4.7.10"
+    "hono": "^4.13.16"
   },
   "devDependencies": {
-    "@cloudflare/workers-types": "^4.20250525.0",
+    "@cloudflare/workers-types": "^4.20260702.1",
     "typescript": "^5.9.3",
-    "wrangler": "^4.151.3"
+    "wrangler": "^4.156.1"
   }
 }
