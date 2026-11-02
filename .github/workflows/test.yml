@@ -38,6 +38,12 @@ jobs:
       - name: Build the comments server
         run: bun run build:comments-server
 
+      # The CLI is not exercised by tsc anywhere else: a dependency whose types
+      # change (e.g. an @agentclientprotocol/sdk major) ships an uncompilable
+      # binary while the tests below stay green.
+      - name: Typecheck the CLI
+        run: bun run --cwd cli build
+
       # Serial: the widget tests share jsdom globals and localStorage state, and
       # Node 26 has no --localstorage-file default location outside the runner
       # temp dir. Both flags are the local workaround for the same failures.
