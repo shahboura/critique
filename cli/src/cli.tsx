@@ -2993,9 +2993,27 @@ cli
       positionalFilters: options['--'],
     });
 
-    const { stdout: gitDiff } = await execAsync(gitCommand, {
-      encoding: "utf-8",
-    });
+    let gitDiff: string;
+    try {
+      ({ stdout: gitDiff } = await execAsync(gitCommand, {
+        encoding: "utf-8",
+      }));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      // A title passed as the first argument reads like a git ref, so git fails
+      // with "ambiguous argument". Say what to do instead of dumping git's error.
+      if (!/ambiguous argument|unknown revision|bad revision/i.test(message)) {
+        throw error;
+      }
+      const refs = [base, head].filter(Boolean).join(" ");
+      console.error(
+        `Unknown git ref: ${refs}\n` +
+          `\`critique web\` takes git refs, not a page title. Either:\n` +
+          `  critique web --title "${refs}"\n` +
+          `  critique --web "${refs}"`,
+      );
+      process.exit(1);
+    }
 
     // In default mode, append dirty submodule diffs
     let fullWebDiff = gitDiff;
