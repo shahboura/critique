@@ -6,16 +6,20 @@
 //     node scripts/selfhost-smoke.mjs
 //
 // EXPECT_PUB is optional. When set (matching the container's PUBLIC_URL), every
-// generated URL must use it. Without it, URLs must use the request origin.
-// In both modes nothing may leak "critique.work". Exits 0 when all checks pass.
-// Note: EXPECT_PUB only changes the assertions when the public origin differs
-// from CRITIQUE_URL. Creates a few short-lived test diffs + one comment on the
-// target instance, so prefer a throwaway instance for re-runs.
+// generated URL must use it. Without it, URLs must use the request origin — so
+// pass it whenever the container sets PUBLIC_URL. In both modes nothing may
+// leak "critique.work". Exits 0 when all checks pass. Creates a few short-lived
+// test diffs + one comment on the target instance, so prefer a throwaway
+// instance for re-runs.
 
 const BASE = (process.env.CRITIQUE_URL || "http://127.0.0.1:8787").replace(/\/+$/, "")
 const EXPECT_PUB = process.env.EXPECT_PUB ? process.env.EXPECT_PUB.replace(/\/+$/, "") : null
 const ORIGIN = EXPECT_PUB || BASE
 const MOBILE_UA = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X)"
+// Diff ids are content hashes, so a fixed fixture would reuse KV entries (and a
+// stored mobile document) on a long-lived instance. One nonce per run keeps
+// every upload fresh.
+const RUN = crypto.randomUUID().slice(0, 8)
 
 let fails = 0
 const ok = (name, cond) => {
@@ -33,7 +37,7 @@ const up = await (await fetch(BASE + "/upload", {
   headers: { "content-type": "application/json" },
   body: JSON.stringify({
     // One responsive page, like the CLI uploads today: both bodies + viewport.
-    html: '<html><head><title>smoke</title><meta name="viewport" content="width=device-width, initial-scale=1"></head><body><div id="content"><p>desktop body</p></div><div id="content-m"><p>mobile body</p></div></body></html>',
+    html: `<html><head><title>smoke ${RUN}</title><meta name="viewport" content="width=device-width, initial-scale=1"></head><body><div id="content"><p>desktop body</p></div><div id="content-m"><p>mobile body</p></div></body></html>`,
     patch: "diff --git a/a b/a\n--- a/a\n+++ b/a\n@@ -1 +1 @@\n-a\n+b\n",
     ogImage: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
   }),
@@ -66,12 +70,15 @@ const legacy = await (await fetch(BASE + "/upload", {
   method: "POST",
   headers: { "content-type": "application/json" },
   body: JSON.stringify({
-    html: '<html><head><title>legacy</title></head><body><p>legacy desktop</p></body></html>',
-    htmlMobile: '<html><head><title>legacy</title></head><body><p>legacy mobile</p></body></html>',
+    html: `<html><head><title>legacy ${RUN}</title></head><body><p>legacy desktop</p></body></html>`,
+    htmlMobile: `<html><head><title>legacy ${RUN}</title></head><body><p>legacy mobile</p></body></html>`,
   }),
 })).json()
 r = await fetch(`${BASE}/v/${legacy.id}`, { headers: { "user-agent": MOBILE_UA }, redirect: "manual" })
 ok("legacy mobile redirect", r.status === 302 && r.headers.get("location") === `${ORIGIN}/v/${legacy.id}?v=mobile`)
+r = await fetch(`${BASE}/v/${legacy.id}`)
+const legacyDesktop = await r.text()
+ok("legacy desktop page unchanged", r.status === 200 && legacyDesktop.includes("legacy desktop") && !legacyDesktop.includes("legacy mobile"))
 r = await fetch(`${BASE}/v/${legacy.id}?v=mobile`)
 const legacyHtml = await r.text()
 ok("legacy mobile page served", r.status === 200 && legacyHtml.includes("legacy mobile") && !legacyHtml.includes("legacy desktop"))

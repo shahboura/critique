@@ -38,7 +38,7 @@ critique --web "my diff"
 ## 2. What you get
 
 - `/v/:id` diff pages (one responsive page for desktop and mobile; pages uploaded
-  before that merge still get the auto mobile redirect to `?v=mobile`)
+  before the responsive-page change still get the auto mobile redirect to `?v=mobile`)
 - `.patch` endpoint on every URL (`curl https://diff.example.com/v/<id>.patch`)
 - og:image link previews (the CLI uploads the image on first share)
 - password-protected links (`critique --web --password`) — need https, see §8
