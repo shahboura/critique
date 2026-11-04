@@ -35,6 +35,12 @@ Upload the same diff and get a shareable URL:
 critique --web "Current working tree"
 ```
 
+Preview a markdown file as a web page:
+
+```bash
+critique preview README.md
+```
+
 Share a GitHub pull request directly, from any directory:
 
 ```bash
@@ -181,7 +187,7 @@ critique
 
 ## Web Previews
 
-`--web` renders the diff with the same terminal renderer, uploads it to [critique.work](https://critique.work), and prints a shareable URL.
+`--web` renders the diff with the same terminal renderer, uploads it to [critique.work](https://critique.work), and prints a shareable URL. The page has a theme picker with every bundled theme, switches to a narrower capture on phones, shows the file and changed-line totals at the top, and puts a `preview` link next to changed markdown files.
 
 ```bash
 # Working tree changes
@@ -219,13 +225,36 @@ Generated URLs look like `critique.work/v/<id>`.
 | `--commit <ref>` | Show changes from a specific commit | none |
 | `--calldiff` | Add experimental call-stack changes to the file tree | off |
 | `--cols <n>` | Desktop render width | `240` |
-| `--mobile-cols <n>` | Mobile render width | `100` |
+| `--mobile-cols <n>` | Mobile render width | `48` |
 | `--filter <pattern>` | Filter files by glob, can be repeated | none |
-| `--theme <name>` | Use a fixed theme instead of auto light and dark mode | none |
+| `--theme <name>` | Base theme for the page; the picker still lists every theme | none |
 | `--no-commit-list` | Do not list the commits contained in the range | off |
 | `--open` | Open the URL in your browser | none |
 | `--json` | Print `{ url, id, files, commits }` for scripts | none |
 | `--password <pw>` | Require a password to open the link (or set `CRITIQUE_PASSWORD`) | none |
+
+### Markdown Previews
+
+Changed `.md` files get a `preview` link: inline in the desktop file tree and file header, and on its own line above each markdown section on phones (a 48-column line has no room left). It opens the rendered document at `/v/<id>/md?path=<file>`, using the theme you are currently viewing the diff with, with the same password and expiry as the diff.
+
+Preview any markdown file without a diff:
+
+```bash
+critique preview README.md
+
+# open it, or protect it
+critique preview docs/guide.md --open
+critique preview docs/guide.md --password 'hunter2'
+```
+
+| Flag | Description | Default |
+| --- | --- | --- |
+| `--open` | Open the URL in your browser | off |
+| `--theme <name>` | Theme used to render the page | `github` |
+| `--password <pw>` | Require a password (or set `CRITIQUE_PASSWORD`) | none |
+| `--json` | Print `{ url, id, file, expiresInDays, protected }` | none |
+
+Markdown is rendered with raw HTML escaped, and only `http`, `https`, `mailto` and relative links are kept. At most 50 files are included; files over 256 KB or more than 2 MB in total are skipped and reported by the CLI.
 
 ### Password Protected Links
 
@@ -259,7 +288,8 @@ curl -H 'X-Critique-Password: hunter2' "$CRITIQUE_URL.patch"
                    │
                    ▼
 ┌─────────────────────────────────────┐
-│ HTML variants and raw patch         │
+│ one responsive page, raw patch,     │
+│ markdown previews                   │
 └─────────────────────────────────────┘
                    │
                    ▼

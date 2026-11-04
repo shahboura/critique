@@ -601,14 +601,15 @@ async function runReviewMode(
       webSpinner.start("Generating web preview...");
 
       try {
-        const { htmlDesktop, htmlMobile, ogImage } = await captureReviewResponsiveHtml({
+        const { html, ogImage } = await captureReviewResponsiveHtml({
           hunks,
           reviewData,
           desktopCols: 230,
-          mobileCols: 100,
+          mobileCols: 48,
           baseRows,
           themeName,
           skipOgImage: Boolean(password),
+          themeNames,
         });
 
         // Clean up temp file
@@ -616,7 +617,7 @@ async function runReviewMode(
         if (acpClient) await acpClient.close();
 
         webSpinner.message("Uploading...");
-        const result = await uploadHtml({ htmlDesktop, htmlMobile, ogImage, password });
+        const result = await uploadHtml({ html, ogImage, password });
         webSpinner.stop("Uploaded");
 
         clack.log.success(`Preview URL: ${result.url}`, out);
@@ -1014,18 +1015,19 @@ async function runResumeMode(options: ResumeModeOptions) {
     webSpinner.start("Generating web preview...");
 
     try {
-      const { htmlDesktop, htmlMobile, ogImage } = await captureReviewResponsiveHtml({
+      const { html, ogImage } = await captureReviewResponsiveHtml({
         hunks: review.hunks,
         reviewData: review.reviewYaml,
         desktopCols: 230,
-        mobileCols: 100,
+        mobileCols: 48,
         baseRows,
         themeName,
         skipOgImage: Boolean(password),
+        themeNames,
       });
 
       webSpinner.message("Uploading...");
-      const result = await uploadHtml({ htmlDesktop, htmlMobile, ogImage, password });
+      const result = await uploadHtml({ html, ogImage, password });
       webSpinner.stop("Uploaded");
 
       clack.log.success(`Preview URL: ${result.url}`);
@@ -1154,6 +1156,7 @@ async function runWebMode(
     uploadOgImage,
     openInBrowser,
     resolveWebPassword,
+    themePalettes,
   } = await import("./web-utils.js");
   const password = resolveWebPassword(options.password);
 
@@ -1161,7 +1164,7 @@ async function runWebMode(
   const log = options.json ? console.error.bind(console) : console.log.bind(console);
 
   const desktopCols = options.cols || 230;
-  const mobileCols = options.mobileCols || 100;
+  const mobileCols = options.mobileCols || 48;
   // For web, always use default theme (with auto dark/light inversion) unless explicitly overridden via --theme
   const themeName = options.theme && themeNames.includes(options.theme)
     ? options.theme
@@ -1181,7 +1184,7 @@ async function runWebMode(
     // Render desktop + mobile HTML and OG image in parallel.
     // Skip OG from initial upload — we'll PATCH it in the background
     // after the URL is printed, so the user sees the URL faster.
-    const { htmlDesktop, htmlMobile, ogImage } = await captureResponsiveHtml(
+    const { html, ogImage, markdown, skippedMarkdown, markdownFromHead } = await captureResponsiveHtml(
       diffContent,
       {
         desktopCols,
@@ -1191,14 +1194,31 @@ async function runWebMode(
         title: options.title,
         skipOgImage: true,
         callDiffByFile: options.callDiffByFile,
+        themeNames,
       }
     );
 
     log("Uploading...");
 
-    const result = await uploadHtml({ htmlDesktop, htmlMobile, patch: diffContent, password });
+    const result = await uploadHtml({
+      html,
+      patch: diffContent,
+      password,
+      markdown,
+      palettes: themePalettes(themeNames),
+      defaultTheme: themeName,
+    });
 
     log(`\nPreview URL: ${result.url}`);
+    if (Object.keys(markdown).length > 0) {
+      log(`Markdown previews: ${Object.keys(markdown).length}`);
+    }
+    if (markdownFromHead.length > 0) {
+      log(`Markdown read from HEAD (not in the working tree): ${markdownFromHead.length}`);
+    }
+    if (skippedMarkdown.length > 0) {
+      log(`Skipped markdown files (unreadable or over the size limit): ${skippedMarkdown.length}`);
+    }
     if (result.passwordProtected) log("Password protected");
     log(formatPreviewExpiry(result.expiresInDays));
     if (typeof result.expiresInDays === "number") {
@@ -2240,7 +2260,7 @@ cli
   .option("--password <password>", "Require a password to view the --web link (or set CRITIQUE_PASSWORD)")
   .option("--image", "Generate images instead of TUI (saved to temp directory)")
   .option("--cols <cols>", "Desktop columns for web/image render (default: 240)")
-  .option("--mobile-cols <cols>", "Mobile columns for web render (default: 100)")
+  .option("--mobile-cols <cols>", "Mobile columns for web render (default: 48)")
   .option("--stdin", "Read diff from stdin (for use as a pager)")
   .option("--scrollback", "Output to terminal scrollback instead of TUI (auto-enabled when non-TTY)")
   .action(async (base, head, options) => {
@@ -2395,7 +2415,7 @@ cli
         open: options.open,
         json: options.json,
         cols: parseInt(options.cols ?? '') || 240,
-        mobileCols: parseInt(options.mobileCols ?? '') || 100,
+        mobileCols: parseInt(options.mobileCols ?? '') || 48,
         theme: options.theme,
         callDiffByFile,
         commits,
@@ -2969,7 +2989,7 @@ cli
   .option("--staged", "Show staged changes")
   .option("--commit <ref>", "Show changes from a specific commit")
   .option("--cols <cols>", "Number of columns for desktop rendering (default: 240)")
-  .option("--mobile-cols <cols>", "Number of columns for mobile rendering (default: 100)")
+  .option("--mobile-cols <cols>", "Number of columns for mobile rendering (default: 48)")
   .option("--open", "Open in browser after generating")
   .option("--context <lines>", "Number of context lines (default: 6)")
   .option("--theme <name>", "Theme to use for rendering")
@@ -3058,11 +3078,62 @@ cli
       title: options.title,
       open: options.open,
       cols: parseInt(options.cols ?? '') || 240,
-      mobileCols: parseInt(options.mobileCols ?? '') || 100,
+      mobileCols: parseInt(options.mobileCols ?? '') || 48,
       theme: options.theme,
       commits,
       password: options.password,
     });
+  });
+
+cli
+  .command("preview <file>", "Preview a markdown file as a web page")
+  .option("--open", "Open in browser after generating")
+  .option("--theme <name>", "Theme to use for rendering")
+  .option("--password <password>", "Require a password to view the link (or set CRITIQUE_PASSWORD)")
+  .option("--json", "Output JSON to stdout")
+  .action(async (file: string, options: { open?: boolean; theme?: string; password?: string; json?: boolean }) => {
+    if (!file.toLowerCase().endsWith(".md")) {
+      process.stderr.write("Error: only markdown (.md) files are supported for now.\n")
+      process.exit(1)
+    }
+
+    const fs = await import("fs")
+    const { uploadHtml, openInBrowser, themePalettes, resolveWebPassword } = await import("./web-utils.js")
+
+    if (!fs.existsSync(file)) {
+      process.stderr.write(`Error: file not found: ${file}\n`)
+      process.exit(1)
+    }
+    const content = fs.readFileSync(file, "utf-8")
+    const themeName = options.theme && themeNames.includes(options.theme) ? options.theme : defaultThemeName
+    const password = resolveWebPassword(options.password)
+
+    if (!options.json) process.stdout.write("Uploading...\n")
+    const result = await uploadHtml({
+      markdown: { [file]: content },
+      palettes: themePalettes(themeNames),
+      defaultTheme: themeName,
+      password,
+    })
+
+    if (options.json) {
+      console.log(JSON.stringify({
+        url: result.url,
+        id: result.id,
+        file,
+        expiresInDays: result.expiresInDays,
+        // Boolean only: the worker never returns the password itself
+        protected: result.passwordProtected === true,
+      }))
+    } else {
+      process.stdout.write(`\nPreview URL: ${result.url}\n`)
+      if (result.passwordProtected) process.stdout.write("Password protected\n")
+      process.stdout.write(`${formatPreviewExpiry(result.expiresInDays)}\n`)
+    }
+    if (options.open) {
+      await openInBrowser(result.url)
+    }
+    process.exit(0)
   });
 
 cli
