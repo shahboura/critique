@@ -1,3 +1,9 @@
+# 0.7.0
+
+1. **Responsive web previews with themes.** Every diff page now offers a theme picker with the bundled themes and renders one responsive page that switches to a narrower capture on phones, instead of uploading a second document and redirecting to it. The top of the page summarises files and added/removed lines, and markdown files get a `preview` link that opens the rendered document in the theme you are reading the diff with. Links uploaded before this change keep their stored mobile document and the auto mobile redirect.
+
+2. **`critique preview <file>`.** Renders a markdown file as a web page in the same themes, with `--open`, `--theme`, `--password` and `--json`.
+
 # 0.6.2
 
 1. **`critique web "<title>"` explains itself.** The deprecated subcommand reads its first argument as a git ref, so a page title failed deep inside git with `fatal: ambiguous argument 'my title'`, followed by a stack trace. It now says the argument must be a ref and shows `critique web --title "<title>"` and `critique --web "<title>"`. Valid refs, ranges and every other git error behave exactly as before.
