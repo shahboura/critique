@@ -2,7 +2,7 @@
 // Extracts key actions (tool calls, messages, thinking) from ACP notifications
 // and formats them as XML context to help the AI understand why changes were made.
 
-import type { SessionNotification } from "@agentclientprotocol/sdk/unstable"
+import type { SessionNotification } from "@agentclientprotocol/sdk"
 import type { CompressedSession, SessionContent } from "./types.js"
 
 /**

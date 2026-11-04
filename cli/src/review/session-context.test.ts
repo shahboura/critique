@@ -4,7 +4,7 @@
 import { describe, it, expect } from "bun:test"
 import { compressSession, sessionsToContextXml } from "./session-context.js"
 import type { SessionContent } from "./types.js"
-import type { SessionNotification } from "@agentclientprotocol/sdk/unstable"
+import type { SessionNotification } from "@agentclientprotocol/sdk"
 
 import simpleResponse from "./fixtures/simple-response.json"
 import toolCallResponse from "./fixtures/tool-call-response.json"

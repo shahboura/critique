@@ -9,7 +9,7 @@ import {
   PROTOCOL_VERSION,
   type ClientConnection,
   type SessionNotification,
-} from "@agentclientprotocol/sdk/unstable"
+} from "@agentclientprotocol/sdk"
 import type { SessionInfo, SessionContent } from "./types.js"
 import { logger } from "../logger.js"
 import fs from "fs"
@@ -342,7 +342,9 @@ export class AcpClient {
     const { sessionId } = response
     logger.info("Session created", { sessionId })
 
-    // Set model if specified. The agent advertises models as a "model" config option.
+    // Set model if specified. Current agents advertise it as a "model" config
+    // option; older ones (claude-code-acp) still return the legacy models list
+    // and implement session/set_model.
     if (options?.model) {
       const modelOption = response.configOptions?.find(
         o => o.category === "model" || o.id === "model"
@@ -357,9 +359,15 @@ export class AcpClient {
           }
         }
       }
-
+      const legacyModels = (response as typeof response & {
+        models?: { availableModels?: Array<{ modelId: string }> }
+      }).models?.availableModels ?? []
       if (!modelOption) {
-        throw new Error(`Agent "${this.agent}" does not advertise a model option.`)
+        availableModels.push(...legacyModels.map(m => ({ value: m.modelId })))
+      }
+
+      if (availableModels.length === 0) {
+        throw new Error(`Agent "${this.agent}" does not advertise any models.`)
       }
 
       if (!availableModels.some(m => m.value === options.model)) {
@@ -375,11 +383,18 @@ export class AcpClient {
       }
 
       logger.info("Setting model...", { model: options.model })
-      await this.client.agent.request(methods.agent.session.setConfigOption, {
-        sessionId,
-        configId: modelOption.id,
-        value: options.model,
-      })
+      if (modelOption) {
+        await this.client.agent.request(methods.agent.session.setConfigOption, {
+          sessionId,
+          configId: modelOption.id,
+          value: options.model,
+        })
+      } else {
+        await this.client.agent.request("session/set_model", {
+          sessionId,
+          modelId: options.model,
+        })
+      }
       logger.info("Model set successfully")
     }
 

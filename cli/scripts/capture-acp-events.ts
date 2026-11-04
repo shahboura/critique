@@ -8,7 +8,7 @@ import {
   ndJsonStream,
   PROTOCOL_VERSION,
   type SessionNotification,
-} from "@agentclientprotocol/sdk/unstable"
+} from "@agentclientprotocol/sdk"
 import fs from "fs"
 
 const outputFile = process.argv[2] || "acp-events.json"
