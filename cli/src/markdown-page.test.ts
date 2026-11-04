@@ -28,6 +28,15 @@ describe("renderMarkdown", () => {
     expect(output).toContain("Beautiful diff viewer")
   })
 
+  test("nested HTML fragments are stripped completely", () => {
+    // One HTML block token containing a split tag: <scr<script> resolves to a
+    // bare text node, so repeat the tag strip until the string stops changing
+    const output = renderMarkdown("<div><scr<script>ipt>x</div>")
+    expect(output).not.toContain("<")
+    expect(output).not.toContain("script")
+    expect(output).toContain("ipt&gt;x")
+  })
+
   test("raw HTML cannot execute", () => {
     const output = renderMarkdown("<script>alert(1)</script>\n\n<img src=x onerror=alert(1)>")
     expect(output).not.toContain("<script")

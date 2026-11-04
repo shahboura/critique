@@ -252,7 +252,7 @@ critique preview docs/guide.md --password 'hunter2'
 | `--open` | Open the URL in your browser | off |
 | `--theme <name>` | Theme used to render the page | `github` |
 | `--password <pw>` | Require a password (or set `CRITIQUE_PASSWORD`) | none |
-| `--json` | Print `{ url, id, file, expiresInDays, passwordProtected }` | none |
+| `--json` | Print `{ url, id, file, expiresInDays, protected }` | none |
 
 Markdown is rendered with raw HTML escaped, and only `http`, `https`, `mailto` and relative links are kept. At most 50 files are included; files over 256 KB or more than 2 MB in total are skipped and reported by the CLI.
 

@@ -61,12 +61,22 @@ export function safeUrl(href: string): string {
  * Raw HTML blocks are common in READMEs (`<div align="center">…`). Showing the
  * tags is noise, dropping the block loses the content, so keep the text.
  */
+function stripTags(html: string): string {
+  // Nested fragments like <scr<script>ipt> need more than one pass
+  let text = html
+  let previous = ""
+  while (text !== previous) {
+    previous = text
+    text = text.replace(/<[^>]*>/g, "")
+  }
+  return text
+}
+
 function htmlToText(html: string): string {
-  const text = html
+  const withBreaks = html
     .replace(/<br\s*\/?>/gi, "\n")
     .replace(/<\/(p|div|h[1-6]|li|tr|blockquote|pre)>/gi, "\n\n")
-    .replace(/<[^>]*>/g, "")
-  return escapeHtml(text)
+  return escapeHtml(stripTags(withBreaks))
 }
 
 const marked = new Marked({ gfm: true })

@@ -3122,7 +3122,8 @@ cli
         id: result.id,
         file,
         expiresInDays: result.expiresInDays,
-        passwordProtected: result.passwordProtected,
+        // Boolean only: the worker never returns the password itself
+        protected: result.passwordProtected === true,
       }))
     } else {
       process.stdout.write(`\nPreview URL: ${result.url}\n`)
