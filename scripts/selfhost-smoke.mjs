@@ -72,6 +72,9 @@ const legacy = await (await fetch(BASE + "/upload", {
 })).json()
 r = await fetch(`${BASE}/v/${legacy.id}`, { headers: { "user-agent": MOBILE_UA }, redirect: "manual" })
 ok("legacy mobile redirect", r.status === 302 && r.headers.get("location") === `${ORIGIN}/v/${legacy.id}?v=mobile`)
+r = await fetch(`${BASE}/v/${legacy.id}?v=mobile`)
+const legacyHtml = await r.text()
+ok("legacy mobile page served", r.status === 200 && legacyHtml.includes("legacy mobile") && !legacyHtml.includes("legacy desktop"))
 
 r = await fetch(`${BASE}/v/${id}.patch`)
 ok("patch endpoint", r.status === 200 && (await r.text()).startsWith("diff --git"))
