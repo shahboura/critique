@@ -8,6 +8,7 @@ import {
   ndJsonStream,
   PROTOCOL_VERSION,
   type ClientConnection,
+  type SessionConfigOption,
   type SessionNotification,
 } from "@agentclientprotocol/sdk"
 import type { SessionInfo, SessionContent } from "./types.js"
@@ -17,6 +18,39 @@ import path from "path"
 import os from "os"
 
 export type AgentType = "opencode" | "claude"
+
+/**
+ * Resolve the agent's advertised models and how to select one.
+ * Current agents expose a "model" config option; older agents
+ * (claude-code-acp) still return the legacy models list.
+ */
+export function resolveModelSelection(response: {
+  configOptions?: Array<SessionConfigOption> | null
+  models?: { availableModels?: Array<{ modelId: string }> }
+}): { availableModels: Array<{ value: string }>; configId: string | undefined } {
+  const modelOption = response.configOptions?.find(
+    o => o.category === "model" || o.id === "model"
+  )
+  const availableModels: Array<{ value: string }> = []
+  let configId: string | undefined
+  if (modelOption?.type === "select") {
+    for (const option of modelOption.options) {
+      if ("group" in option) {
+        availableModels.push(...option.options)
+      } else {
+        availableModels.push(option)
+      }
+    }
+    if (availableModels.length > 0) {
+      configId = modelOption.id
+    }
+  }
+  if (availableModels.length === 0) {
+    const legacyModels = response.models?.availableModels ?? []
+    availableModels.push(...legacyModels.map(m => ({ value: m.modelId })))
+  }
+  return { availableModels, configId }
+}
 
 /**
  * Client for communicating with AI agents via ACP protocol
@@ -346,25 +380,7 @@ export class AcpClient {
     // option; older ones (claude-code-acp) still return the legacy models list
     // and implement session/set_model.
     if (options?.model) {
-      const modelOption = response.configOptions?.find(
-        o => o.category === "model" || o.id === "model"
-      )
-      const availableModels: Array<{ value: string }> = []
-      if (modelOption?.type === "select") {
-        for (const option of modelOption.options) {
-          if ("group" in option) {
-            availableModels.push(...option.options)
-          } else {
-            availableModels.push(option)
-          }
-        }
-      }
-      const legacyModels = (response as typeof response & {
-        models?: { availableModels?: Array<{ modelId: string }> }
-      }).models?.availableModels ?? []
-      if (!modelOption) {
-        availableModels.push(...legacyModels.map(m => ({ value: m.modelId })))
-      }
+      const { availableModels, configId } = resolveModelSelection(response)
 
       if (availableModels.length === 0) {
         throw new Error(`Agent "${this.agent}" does not advertise any models.`)
@@ -383,10 +399,10 @@ export class AcpClient {
       }
 
       logger.info("Setting model...", { model: options.model })
-      if (modelOption) {
+      if (configId) {
         await this.client.agent.request(methods.agent.session.setConfigOption, {
           sessionId,
-          configId: modelOption.id,
+          configId,
           value: options.model,
         })
       } else {
