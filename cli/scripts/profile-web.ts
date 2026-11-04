@@ -51,9 +51,9 @@ async function main() {
     return sum + diffLines + 5
   }, 100)
 
-  const { htmlDesktop, htmlMobile } = await captureResponsiveHtml(cleaned, {
+  const { html } = await captureResponsiveHtml(cleaned, {
     desktopCols: 230,
-    mobileCols: 100,
+    mobileCols: 50,
     baseRows,
     themeName: defaultThemeName,
     title: "Profile test",
@@ -61,11 +61,11 @@ async function main() {
     skipOgImage: true,
   })
   t4.stop()
-  console.error(`     Desktop HTML: ${(htmlDesktop.length / 1024).toFixed(1)} KB, Mobile: ${(htmlMobile.length / 1024).toFixed(1)} KB`)
+  console.error(`     Desktop HTML: ${(html.length / 1024).toFixed(1)} KB`)
 
   // ── Step 5: upload HTML (no OG) ──
   const t5 = time("5. upload HTML (no OG image)")
-  const result = await uploadHtml({ htmlDesktop, htmlMobile })
+  const result = await uploadHtml({ html })
   t5.stop()
   console.error(`     URL: ${result.url}`)
 

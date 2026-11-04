@@ -14,6 +14,8 @@ export interface DirectoryTreeViewProps {
   onFileSelect?: (fileIndex: number) => void
   /** Theme name for colors */
   themeName: string
+  /** Available columns; names longer than this are truncated with an ellipsis */
+  maxWidth?: number
 }
 
 /**
@@ -38,7 +40,16 @@ interface TreeNodeLineProps {
   theme: ReturnType<typeof getResolvedTheme>
   mutedColor: string
   textColor: string
+  maxWidth?: number
   onSelect?: () => void
+}
+
+/** Keep a label inside the available columns; the file header shows the full path */
+export function truncateToWidth(text: string, available: number): string {
+  if (text.length <= available) return text
+  if (available <= 0) return ""
+  if (available === 1) return "\u2026"
+  return `${text.slice(0, available - 1)}\u2026`
 }
 
 /**
@@ -49,6 +60,7 @@ const TreeNodeLine: React.FC<TreeNodeLineProps> = ({
   theme,
   mutedColor,
   textColor,
+  maxWidth,
   onSelect,
 }) => {
   const [isHovered, setIsHovered] = React.useState(false)
@@ -62,6 +74,16 @@ const TreeNodeLine: React.FC<TreeNodeLineProps> = ({
     const hasDeletions = (node.deletions ?? 0) > 0
 
     const callDiffPrefix = node.prefix + (node.connector.startsWith("├") ? "│   " : "    ")
+    const countText = [
+      hasAdditions ? `+${node.additions}` : "",
+      hasAdditions && hasDeletions ? "," : "",
+      hasDeletions ? `-${node.deletions}` : "",
+    ].join("")
+    const countsWidth = 2 + countText.length + 1
+    const available = maxWidth === undefined
+      ? Number.POSITIVE_INFINITY
+      : maxWidth - node.prefix.length - node.connector.length - countsWidth
+    const displayPath = truncateToWidth(node.displayPath, available)
 
     return (
       <box style={{ flexDirection: "column" }}>
@@ -75,7 +97,7 @@ const TreeNodeLine: React.FC<TreeNodeLineProps> = ({
           // onMouseDown={onSelect} // disabled: conflicts with copy selection
         >
           <text fg={mutedColor}>{node.prefix}{node.connector}</text>
-          <text fg={pathColor}>{node.displayPath}</text>
+          <text fg={pathColor}>{displayPath}</text>
           <text fg={mutedColor}> (</text>
           {hasAdditions && <text fg={addColor}>+{node.additions}</text>}
           {hasAdditions && hasDeletions && <text fg={mutedColor}>,</text>}
@@ -102,10 +124,13 @@ const TreeNodeLine: React.FC<TreeNodeLineProps> = ({
   }
 
   // Directory node - use muted color for everything
+  const available = maxWidth === undefined
+    ? Number.POSITIVE_INFINITY
+    : maxWidth - node.prefix.length - node.connector.length
   return (
     <box style={{ flexDirection: "row" }}>
       <text fg={mutedColor}>{node.prefix}{node.connector}</text>
-      <text fg={textColor}>{node.displayPath}</text>
+      <text fg={textColor}>{truncateToWidth(node.displayPath, available)}</text>
     </box>
   )
 }
@@ -118,6 +143,7 @@ export function DirectoryTreeView({
   files,
   onFileSelect,
   themeName,
+  maxWidth,
 }: DirectoryTreeViewProps): React.ReactElement | null {
   const nodes = React.useMemo(() => buildDirectoryTree(files), [files])
   const resolvedTheme = getResolvedTheme(themeName)
@@ -142,6 +168,7 @@ export function DirectoryTreeView({
           theme={resolvedTheme}
           mutedColor={mutedColor}
           textColor={textColor}
+          maxWidth={maxWidth}
           onSelect={
             node.isFile && node.fileIndex !== undefined && onFileSelect
               ? () => onFileSelect(node.fileIndex!)

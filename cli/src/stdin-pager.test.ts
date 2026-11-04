@@ -475,7 +475,6 @@ describe("--stdin pager mode (lazygit issue #25)", () => {
               └── b/src
                   └── hello.ts (+1,-1)
 
-
        a/src/hello.ts → b/src/hello.ts +1-1
 
        1   const greeting = 'hello'

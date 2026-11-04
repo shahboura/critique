@@ -3,14 +3,19 @@
 // and uploads desktop/mobile versions for shareable diff viewing.
 
 import { execFile } from "child_process"
+import childProcess from "child_process"
 import { promisify } from "util"
 import fs from "fs"
 import { tmpdir } from "os"
-import { join } from "path"
+import path from "path"
 import { getResolvedTheme, rgbaToHex } from "./themes.js"
-import { buildDirectoryTree } from "./directory-tree.js"
+import { buildThemeVariants, themeMode } from "./theme-map.js"
+import { truncateToWidth } from "./components/directory-tree-view.js"
 import type { BoxRenderable, CapturedFrame, CapturedLine, RootRenderable, CliRenderer } from "@opentuah/core"
 import { DiffRenderable } from "@opentuah/core"
+import type { ThemeVariant } from "./ansi-html.js"
+import { buildHtmlDocument, frameToHtml, StyleClassMap } from "./ansi-html.js"
+import type { MarkdownPalette } from "./markdown-page.js"
 import type { IndexedHunk, ReviewYaml } from "./review/types.js"
 import { loadStoredLicenseKey, loadOrCreateOwnerSecret } from "./license.js"
 import { BUILD_ID } from "./build-info.js"
@@ -37,6 +42,8 @@ export interface CaptureOptions {
   stabilizeMs?: number
   /** Optional call-stack changes to render below files in the top tree */
   callDiffByFile?: CallDiffByFile
+  /** Web only: truncate the file header so an inline preview link fits on one row */
+  compactHeader?: boolean
 }
 
 export interface UploadResult {
@@ -68,11 +75,17 @@ function renderNoticeBlock(options: {
         <text fg={options.mutedColor}> to delete.</text>
       </box>
       {options.showExpiry ? (
-        <box style={{ flexDirection: "row" }}>
-          <text fg={options.mutedColor}>This page will expire in 7 days. </text>
-          <text fg={options.mutedColor}>Get unlimited links: </text>
-          <text fg={options.mutedColor}>{buyUrl}</text>
-        </box>
+        <>
+          <box style={{ flexDirection: "row" }}>
+            <text fg={options.mutedColor}>This page will expire in 7 days.</text>
+          </box>
+          <box style={{ flexDirection: "row" }}>
+            <text fg={options.mutedColor}>Get unlimited links:</text>
+          </box>
+          <box style={{ flexDirection: "row" }}>
+            <text fg={options.mutedColor}>{buyUrl}</text>
+          </box>
+        </>
       ) : null}
     </box>
   )
@@ -193,7 +206,14 @@ interface FileSectionPosition {
 interface RenderDiffFrameResult {
   frame: CapturedFrame
   sectionPositions: FileSectionPosition[]
-  treeFileOrder: number[]
+  files: DiffFileStat[]
+}
+
+/** Per-file numbers for the summary header and the tree */
+export interface DiffFileStat {
+  path: string
+  additions: number
+  deletions: number
 }
 
 /**
@@ -247,9 +267,11 @@ async function renderDiffToFrameWithSectionPositions(
       callDiffs: options.callDiffByFile?.[getFileName(file)],
     }
   })
-  const treeFileOrder = buildDirectoryTree(treeFiles)
-    .filter((node) => node.isFile && node.fileIndex !== undefined)
-    .map((node) => node.fileIndex!)
+  const fileStats: DiffFileStat[] = treeFiles.map((file) => ({
+    path: file.path,
+    additions: file.additions,
+    deletions: file.deletions,
+  }))
 
   if (filesWithRawDiff.length === 0) {
     throw new Error("No files to display")
@@ -285,8 +307,8 @@ async function renderDiffToFrameWithSectionPositions(
             })
           : null}
 
-        <box style={{ marginBottom: 2 }}>
-          <DirectoryTreeView files={treeFiles} themeName={themeName} />
+        <box style={{ marginBottom: options.cols < 80 ? 1 : 2 }}>
+          <DirectoryTreeView files={treeFiles} themeName={themeName} maxWidth={options.cols} />
         </box>
 
         {filesWithRawDiff.map((file, idx) => {
@@ -313,10 +335,13 @@ async function renderDiffToFrameWithSectionPositions(
                   paddingRight: 1,
                   flexShrink: 0,
                   flexDirection: "row",
+                  flexWrap: "wrap",
                   alignItems: "center",
                 }}
               >
-                {oldFileName ? (
+                {options.compactHeader ? (
+                  <text fg={webText}>{narrowHeaderLabel(fileName, options.cols, additions, deletions)}</text>
+                ) : oldFileName ? (
                   <>
                     <text fg={webMuted}>{oldFileName.trim()}</text>
                     <text fg={webMuted}> → </text>
@@ -325,8 +350,11 @@ async function renderDiffToFrameWithSectionPositions(
                 ) : (
                   <text fg={webText}>{fileName.trim()}</text>
                 )}
-                <text fg="#2d8a47"> +{additions}</text>
-                <text fg="#c53b53">-{deletions}</text>
+                {/* Counts wrap as one unit so a narrow capture cannot split them */}
+                <box style={{ flexDirection: "row", flexShrink: 0 }}>
+                  <text fg="#2d8a47"> +{additions}</text>
+                  <text fg="#c53b53">-{deletions}</text>
+                </box>
               </box>
 
               <DiffView
@@ -413,7 +441,7 @@ async function renderDiffToFrameWithSectionPositions(
   return {
     frame,
     sectionPositions,
-    treeFileOrder,
+    files: fileStats,
   }
 }
 
@@ -491,6 +519,9 @@ export function extractLineNumber(line: CapturedLine): string | null {
  */
 export function extractTreeFilePath(lineText: string): string | null {
   const match = lineText.match(/^\s*[│ ]*[├└]──\s+(.+?)\s+\([^)]*\)\s*$/)
+    // A narrow capture clips long rows: the connector or the counts can be cut off
+    ?? lineText.match(/^\s*(.+?)\s+\([^)]*\)\s*$/)
+    ?? lineText.match(/^\s*(?:[│ ]*[├└]──\s+)?([^\s(]+\.[^\s(]+)\s*$/)
   if (!match || !match[1]) return null
   return match[1].trim()
 }
@@ -510,11 +541,13 @@ function escapeHtmlAttribute(value: string): string {
  */
 export function buildAnchorMap(
   sections: Array<{ lineIndex: number; fileName: string }>,
+  /** Prefix so the narrow body can reuse the same labels without duplicate DOM ids */
+  idPrefix = "",
 ): Map<number, { id: string; label: string }> {
   const anchors = new Map<number, { id: string; label: string }>()
   // Reserve ids the document already uses so a file named e.g. "to.top"
-  // cannot hijack the scroll-to-top button or the content container.
-  const usedIds = new Set<string>(["content", "to-top"])
+  // cannot hijack the scroll-to-top button or the content containers.
+  const usedIds = new Set<string>(["content", "content-m", "scroll", "bar", "theme-select", "to-top"])
 
   for (const section of sections) {
     if (!Number.isFinite(section.lineIndex) || section.lineIndex < 0) continue
@@ -522,7 +555,7 @@ export function buildAnchorMap(
 
     const label = section.fileName.trim()
     const baseSlug = slugifyFileName(label) || "file"
-    const id = dedupeId(baseSlug, usedIds)
+    const id = dedupeId(`${idPrefix}${baseSlug}`, usedIds)
     usedIds.add(id)
     anchors.set(section.lineIndex, { id, label })
   }
@@ -538,17 +571,13 @@ const SECTION_ANCHOR_CSS = `
   .file-link:hover { text-decoration: underline; }
   .tree-file-link { color: inherit; text-decoration: none; }
   .tree-file-link:hover { text-decoration: underline; }
+  .md-preview { color: inherit; white-space: nowrap; opacity: 0.7; font-size: 0.9em; text-decoration: underline; }
+  .md-preview:hover { opacity: 1; }
 `
 
 // JS: scroll to hash fragment on page load + click-to-copy filename on .file-link click.
 // On click: copies the filename text to clipboard and updates the URL hash.
 const SECTION_ANCHOR_JS = `
-  // Scroll to hash on page load
-  if (location.hash) {
-    var el = document.getElementById(location.hash.slice(1));
-    if (el) setTimeout(function () { el.scrollIntoView({ behavior: 'smooth' }) }, 100);
-  }
-
   // Click file link: copy filename to clipboard + update URL hash
   document.addEventListener('click', function (e) {
     var link = e.target.closest('.file-link');
@@ -561,51 +590,261 @@ const SECTION_ANCHOR_JS = `
   });
 `
 
-/**
- * Capture diff and convert to HTML using test renderer
- */
-export async function captureToHtml(
-  diffContent: string,
-  options: CaptureOptions
-): Promise<string> {
-  const { frameToHtmlDocument } = await import("./ansi-html.js")
+/** Markdown previews are auxiliary: cap them so one upload cannot balloon. */
+const MARKDOWN_MAX_FILE_BYTES = 256 * 1024
+const MARKDOWN_MAX_TOTAL_BYTES = 2 * 1024 * 1024
+const MARKDOWN_MAX_FILES = 50
 
-  // Render diff to captured frame (with notice for web uploads)
-  // and collect exact section line positions from layout metadata.
-  const { frame, sectionPositions, treeFileOrder } = await renderDiffToFrameWithSectionPositions(
-    diffContent,
-    { ...options, showNotice: true },
-  )
-  const anchors = buildAnchorMap(sectionPositions)
-  const anchorIdByFileIndex = new Map<number, string>()
+/**
+ * Link rendered next to markdown files. The href is bound to /v/<id>/md at serve
+ * time, because the diff id only exists after the upload.
+ */
+function markdownPreviewLink(path: string, markdownPaths: Set<string>): string {
+  if (!markdownPaths.has(path)) return ""
+  const label = escapeHtmlAttribute(`Preview ${path}`)
+  return ` <a class="md-preview" data-md-preview data-path="${escapeHtmlAttribute(path)}" href="#" title="${label}" aria-label="${label}">preview</a>`
+}
+
+/**
+ * Header label for a narrow capture: leave room for the counts and the inline
+ * `preview` link, so the whole row stays on one line.
+ */
+export function narrowHeaderLabel(
+  name: string,
+  cols: number,
+  additions: number,
+  deletions: number,
+): string {
+  // +2 for the 0.9em link rendering slightly wider than its character count
+  const reserved = ` +${additions}-${deletions}`.length + " preview".length + 2
+  return truncateToWidth(name.trim(), Math.max(8, cols - reserved))
+}
+
+/** "N files · +a −d" for the sticky bar */
+function summaryHtml(files: DiffFileStat[]): string {
+  const additions = files.reduce((sum, file) => sum + file.additions, 0)
+  const deletions = files.reduce((sum, file) => sum + file.deletions, 0)
+  const label = `${files.length} ${files.length === 1 ? "file" : "files"}`
+  return `<span>${label}</span><span class="sep">·</span><span class="add">+${additions}</span><span class="del">−${deletions}</span>`
+}
+
+/** Palettes for every bundled theme, sent with standalone markdown uploads */
+export function themePalettes(themeNames: string[]): Record<string, MarkdownPalette> {
+  return Object.fromEntries(themeNames.map((name) => [name, themePalette(name)]))
+}
+
+/** Colors the worker needs to style the markdown page like the diff */
+export function themePalette(themeName: string): MarkdownPalette {
+  const theme = getResolvedTheme(themeName)
+  return {
+    background: rgbaToHex(theme.background),
+    text: rgbaToHex(theme.text),
+    muted: rgbaToHex(theme.textMuted),
+    link: rgbaToHex(theme.markdownLink),
+  }
+}
+
+/** Diff paths may carry a/ or b/ prefixes (PR diffs, stdin); disk paths do not. */
+function normalizeRepoPath(path: string): string {
+  return path.replace(/^[ab]\//, "")
+}
+
+/** Repo root, so a CLI started in a subdirectory still finds the changed files. */
+let repoRootCache: string | null | undefined
+function repoRoot(): string | null {
+  if (repoRootCache !== undefined) return repoRootCache
+  try {
+    repoRootCache = childProcess.execFileSync("git", ["rev-parse", "--show-toplevel"], { encoding: "utf-8" }).trim()
+  } catch {
+    repoRootCache = null
+  }
+  return repoRootCache
+}
+
+/**
+ * Portable "inside this directory" check: `path.relative` normalises separators,
+ * so this also works when git reports `/` on Windows.
+ */
+function isInsidePath(root: string, candidate: string): boolean {
+  const relative = path.relative(root, candidate)
+  return relative !== "" && relative !== ".." && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative)
+}
+
+/** Working-tree content, falling back to HEAD for files deleted in the diff. */
+function readRepoFile(repoPath: string): { content: string; ref: "working tree" | "HEAD" } | null {
+  const root = repoRoot()
+  if (!root) return null
+
+  let rootReal: string
+  try {
+    rootReal = fs.realpathSync(root)
+  } catch {
+    return null
+  }
+
+  // Diff paths come from remote PRs: never read outside the checkout, symlinks included
+  const candidate = path.resolve(rootReal, repoPath)
+  if (!isInsidePath(rootReal, candidate)) return null
+
+  try {
+    const real = fs.realpathSync(candidate)
+    if (!isInsidePath(rootReal, real)) return null
+    const stat = fs.statSync(real)
+    if (!stat.isFile() || stat.size > MARKDOWN_MAX_FILE_BYTES) return null
+    return { content: fs.readFileSync(real, "utf-8"), ref: "working tree" }
+  } catch {
+    // Not on disk: deleted in the working tree
+  }
+
+  try {
+    // `<rev>:<path>` is always repo-root relative, so this works from a subdirectory
+    return {
+      content: childProcess.execFileSync("git", ["show", `HEAD:${repoPath}`], {
+        encoding: "utf-8",
+        maxBuffer: 8 * 1024 * 1024,
+      }),
+      ref: "HEAD",
+    }
+  } catch {
+    return null
+  }
+}
+
+/** Read changed markdown files, skipping anything unreadable or over the budget. */
+export function collectMarkdownFiles(paths: string[]): {
+  files: Record<string, string>
+  skipped: string[]
+  fromHead: string[]
+} {
+  const files: Record<string, string> = {}
+  const skipped: string[] = []
+  const fromHead: string[] = []
+  let total = 0
+
+  for (const rawPath of paths) {
+    // Diff paths may carry a/ or b/ prefixes; accept both here so callers cannot forget
+    const repoPath = normalizeRepoPath(rawPath)
+    if (!repoPath.toLowerCase().endsWith(".md")) continue
+    if (Object.keys(files).length >= MARKDOWN_MAX_FILES) {
+      skipped.push(repoPath)
+      continue
+    }
+    const result = readRepoFile(repoPath)
+    if (result === null) {
+      skipped.push(repoPath)
+      continue
+    }
+    const bytes = Buffer.byteLength(result.content)
+    if (bytes > MARKDOWN_MAX_FILE_BYTES || total + bytes > MARKDOWN_MAX_TOTAL_BYTES) {
+      skipped.push(repoPath)
+      continue
+    }
+    files[repoPath] = result.content
+    if (result.ref === "HEAD") fromHead.push(repoPath)
+    total += bytes
+  }
+
+  return { files, skipped, fromHead }
+}
+
+export interface DocumentCaptureOptions extends CaptureOptions {
+  /** Narrow capture; enables the responsive body swap */
+  mobile?: { cols: number; maxRows: number }
+  /** Themes offered in the picker. Omitted keeps the single fixed theme. */
+  themeNames?: string[]
+  /** Show "N files · +a −d" above the tree */
+  showSummary?: boolean
+  /** Collect changed markdown files and link them to the preview endpoint */
+  collectMarkdown?: boolean
+}
+
+export interface DocumentCaptureResult {
+  document: string
+  markdown: Record<string, string>
+  skippedMarkdown: string[]
+  /** Files whose content came from HEAD because they are gone from the worktree */
+  markdownFromHead: string[]
+}
+
+export interface SectionLookupEntry {
+  displayName: string
+  anchorId: string
+  fullPath: string
+}
+
+/**
+ * Find a file section by the label printed in the tree. A narrow capture cuts
+ * long names with an ellipsis, so the unique prefix is accepted too.
+ */
+export function findSectionByLabel(
+  label: string,
+  entries: SectionLookupEntry[],
+): SectionLookupEntry | undefined {
+  const exact = entries.find((entry) => entry.displayName === label)
+  if (exact) return exact
+  if (!label.endsWith("\u2026")) return undefined
+  const prefix = label.slice(0, -1)
+  const matches = entries.filter((entry) => entry.displayName.startsWith(prefix))
+  return matches.length === 1 ? matches[0] : undefined
+}
+
+/**
+ * Tree rows are visited in file order, so duplicate basenames are handed out
+ * in order too (two `index.ts` rows map to their own sections).
+ */
+export function createSectionLookup(
+  entries: SectionLookupEntry[],
+): (label: string) => SectionLookupEntry | undefined {
+  const byLabel = new Map<string, SectionLookupEntry[]>()
+  for (const entry of entries) {
+    const list = byLabel.get(entry.displayName)
+    if (list) list.push(entry)
+    else byLabel.set(entry.displayName, [entry])
+  }
+  const used = new Map<string, number>()
+
+  return (label: string) => {
+    const list = byLabel.get(label)
+    if (list) {
+      const index = used.get(label) ?? 0
+      used.set(label, index + 1)
+      return list[Math.min(index, list.length - 1)]
+    }
+    return findSectionByLabel(label, entries)
+  }
+}
+
+/**
+ * Render one captured body (desktop or narrow) to HTML, wiring file anchors,
+ * annotation anchors and markdown preview links.
+ */
+function renderCapturedBody(
+  captured: RenderDiffFrameResult,
+  classMap: StyleClassMap,
+  idPrefix: string,
+  markdownPaths: Set<string>,
+): { html: string; spanCss: string } {
+  const { frame, sectionPositions } = captured
+  const anchors = buildAnchorMap(sectionPositions, idPrefix)
+  // Tree rows show a basename; look the section up by that name. Resolving by
+  // position breaks as soon as one row is clipped or unmatched.
+  const sections: SectionLookupEntry[] = []
   for (const section of sectionPositions) {
     const anchor = anchors.get(section.lineIndex)
-    if (anchor) {
-      anchorIdByFileIndex.set(section.fileIndex, anchor.id)
-    }
+    if (!anchor) continue
+    const fullPath = normalizeRepoPath(section.fileName)
+    const displayName = fullPath.split("/").pop()
+    if (!displayName) continue
+    sections.push({ displayName, anchorId: anchor.id, fullPath })
   }
-  const treeAnchorOrder = treeFileOrder.map((fileIndex) => anchorIdByFileIndex.get(fileIndex) ?? null)
 
-  // Get theme colors for HTML output
-  const theme = getResolvedTheme(options.themeName)
-  const backgroundColor = rgbaToHex(theme.background)
-  const textColor = rgbaToHex(theme.text)
-
-  // Check if theme was explicitly set (not default)
-  const { themeNames, defaultThemeName } = await import("./themes.js")
-  const customTheme = options.themeName !== defaultThemeName && themeNames.includes(options.themeName)
-
-  // Build renderLine callback that:
-  // 1. Wraps file header lines with anchor IDs and clickable links
-  // 2. Adds data-anchor="file:line" on diff lines so the agentation widget
-  //    can capture which exact diff line an annotation refers to
-  //
   // sectionPositions is sorted by lineIndex (ascending). We track currentFile
   // by advancing a pointer as we iterate lines.
   const sortedSections = [...sectionPositions].sort((a, b) => a.lineIndex - b.lineIndex)
   let sectionPtr = 0
   let currentFile: string | null = null
-  let treeLinkPtr = 0
+
+  const lookupSection = createSectionLookup(sections)
 
   const renderLineCallback = (defaultHtml: string, line: CapturedLine, lineIndex: number) => {
     // Advance current file when we pass a section boundary
@@ -616,24 +855,26 @@ export async function captureToHtml(
 
     let html = defaultHtml
 
-    if (currentFile === null && treeLinkPtr < treeAnchorOrder.length) {
+    if (currentFile === null) {
       const lineText = line.spans.map((span) => span.text).join("")
       const treePath = extractTreeFilePath(lineText)
       if (treePath) {
-        const targetAnchor = treeAnchorOrder[treeLinkPtr]
-        treeLinkPtr++
+        const section = lookupSection(treePath)
+        const escapedPath = escapeHtmlAttribute(treePath)
 
-        if (targetAnchor) {
-          const escapedPath = escapeHtmlAttribute(treePath)
+        if (section) {
+          // Tree rows jump to their section. The preview link lives at the
+          // section header (desktop also gets an inline one here).
+          const preview = idPrefix === "m-" ? "" : markdownPreviewLink(section.fullPath, markdownPaths)
           html = html.replace(
             `>${escapedPath}</span>`,
-            `><a href="#${targetAnchor}" class="tree-file-link">${escapedPath}</a></span>`,
+            `><a href="#${section.anchorId}" class="tree-file-link">${escapedPath}</a>${preview}</span>`,
           )
         }
       }
     }
 
-    // File-section header: add id + clickable link
+    // File-section header: add id + clickable link + markdown preview
     const anchor = anchors.get(lineIndex)
     if (anchor) {
       html = html.replace(
@@ -641,10 +882,32 @@ export async function captureToHtml(
         `<div id="${anchor.id}" class="line file-section">`,
       )
       const escapedLabel = escapeHtmlAttribute(anchor.label)
-      html = html.replace(
-        `>${escapedLabel}</span>`,
-        `><a href="#${anchor.id}" class="file-link">${escapedLabel}</a></span>`,
-      )
+      const previewPath = normalizeRepoPath(anchor.label)
+      if (idPrefix === "m-" && markdownPaths.has(previewPath)) {
+        // Narrow headers are pre-truncated so the label, counts and inline link
+        // share one row; the full path lives in the link's accessible name.
+        const stats = captured.files.find((file) => normalizeRepoPath(file.path) === previewPath)
+        // Truncate the label exactly as the capture did (it may keep an a/ or b/ prefix)
+        const narrowLabel = narrowHeaderLabel(
+          anchor.label,
+          captured.frame.cols,
+          stats?.additions ?? 0,
+          stats?.deletions ?? 0,
+        )
+        const preview = markdownPreviewLink(previewPath, markdownPaths)
+        // Drop the captured right padding first: the inline link needs that room
+        html = html.replace(/<span class="s\d+">[ \u00a0]*<\/span><\/div>$/, "</div>")
+        html = html.replace(
+          `>${escapeHtmlAttribute(narrowLabel)}</span>`,
+          `>${escapeHtmlAttribute(narrowLabel)}${preview}</span>`,
+        )
+      } else {
+        const preview = markdownPreviewLink(previewPath, markdownPaths)
+        html = html.replace(
+          `>${escapedLabel}</span>`,
+          `><a href="#${anchor.id}" class="file-link">${escapedLabel}</a>${preview}</span>`,
+        )
+      }
     }
 
     // Diff line: extract line number from spans and add data-anchor.
@@ -665,19 +928,85 @@ export async function captureToHtml(
     return html
   }
 
-  return frameToHtmlDocument(frame, {
-    backgroundColor,
-    textColor,
-    autoTheme: !customTheme,
-    title: options.title,
+  return frameToHtml(frame, {
+    classMap,
     renderLine: renderLineCallback,
-    extraCss: anchors.size > 0 ? SECTION_ANCHOR_CSS : undefined,
-    extraJs: anchors.size > 0 ? SECTION_ANCHOR_JS : undefined,
   })
 }
 
 /**
- * Generate desktop and mobile HTML versions in parallel, with optional OG image
+ * Capture the diff once (plus an optional narrow capture) and build a single
+ * document: themed, responsive, with a summary bar and markdown preview links.
+ */
+export async function captureDocument(
+  diffContent: string,
+  options: DocumentCaptureOptions,
+): Promise<DocumentCaptureResult> {
+  const classMap = new StyleClassMap()
+
+  // Render diff to captured frame (with notice for web uploads)
+  // and collect exact section line positions from layout metadata.
+  // Both captures run in parallel: the narrow one does not depend on the desktop one.
+  const [desktop, mobile] = await Promise.all([
+    renderDiffToFrameWithSectionPositions(diffContent, { ...options, showNotice: true }),
+    options.mobile
+      ? renderDiffToFrameWithSectionPositions(diffContent, {
+        ...options,
+        cols: options.mobile.cols,
+        maxRows: options.mobile.maxRows,
+        showNotice: true,
+        compactHeader: true,
+      })
+      : Promise.resolve(null),
+  ])
+
+  // Markdown links need the file list, which the render above already produced
+  const markdown = options.collectMarkdown
+    ? collectMarkdownFiles(desktop.files.map((file) => normalizeRepoPath(file.path)))
+    : { files: {} as Record<string, string>, skipped: [] as string[], fromHead: [] as string[] }
+  const markdownPaths = new Set(Object.keys(markdown.files))
+
+  const desktopBody = renderCapturedBody(desktop, classMap, "", markdownPaths)
+  const mobileBody = mobile ? renderCapturedBody(mobile, classMap, "m-", markdownPaths) : null
+  // Both bodies share the class map, so the last call returns the union
+  const spanCss = mobileBody?.spanCss ?? desktopBody.spanCss
+
+  const baseTheme = getResolvedTheme(options.themeName)
+  const palette = themePalette(options.themeName)
+  const themes: ThemeVariant[] | undefined = options.themeNames?.length
+    ? buildThemeVariants(options.themeNames, spanCss, options.themeName)
+    : undefined
+
+  const document = buildHtmlDocument({
+    content: desktopBody.html,
+    mobileContent: mobileBody?.html,
+    cols: options.cols,
+    mobileCols: options.mobile?.cols,
+    spanCss,
+    themes,
+    baseTheme: options.themeName,
+    baseMode: themeMode(baseTheme),
+    lightTheme: "github-light",
+    headerHtml: options.showSummary ? summaryHtml(desktop.files) : undefined,
+    title: options.title,
+    backgroundColor: rgbaToHex(baseTheme.background),
+    textColor: rgbaToHex(baseTheme.text),
+    mutedColor: palette.muted,
+    linkColor: palette.link,
+    extraCss: SECTION_ANCHOR_CSS,
+    extraJs: SECTION_ANCHOR_JS,
+  })
+
+  return {
+    document,
+    markdown: markdown.files,
+    skippedMarkdown: markdown.skipped,
+    markdownFromHead: markdown.fromHead,
+  }
+}
+
+/**
+ * Capture desktop + narrow bodies into one document, with optional OG image
  */
 export async function captureResponsiveHtml(
   diffContent: string,
@@ -693,8 +1022,16 @@ export async function captureResponsiveHtml(
     skipOgImage?: boolean
     /** Optional call-stack changes to render below files in the top tree */
     callDiffByFile?: CallDiffByFile
+    /** Themes offered in the page picker */
+    themeNames?: string[]
   }
-): Promise<{ htmlDesktop: string; htmlMobile: string; ogImage: Buffer | null }> {
+): Promise<{
+  html: string
+  ogImage: Buffer | null
+  markdown: Record<string, string>
+  skippedMarkdown: string[]
+  markdownFromHead: string[]
+}> {
   // Max row values - content-fitting will grow to actual content size
   // These act as upper bounds to prevent runaway memory usage
   const desktopRows = Math.max(options.baseRows * 3, 5000)
@@ -703,7 +1040,6 @@ export async function captureResponsiveHtml(
   // The function exits instantly when highlighting completes, so 2000ms is fine.
   const stabilizeMs = options.stabilizeMs ?? 2000
 
-  // Run all renders in parallel: desktop HTML, mobile HTML, and OG image
   const ogImagePromise = options.skipOgImage
     ? Promise.resolve(null)
     : (async (): Promise<Buffer | null> => {
@@ -720,27 +1056,29 @@ export async function captureResponsiveHtml(
         }
       })()
 
-  const [htmlDesktop, htmlMobile, ogImage] = await Promise.all([
-    captureToHtml(diffContent, {
+  const [captured, ogImage] = await Promise.all([
+    captureDocument(diffContent, {
       cols: options.desktopCols,
       maxRows: desktopRows,
+      mobile: { cols: options.mobileCols, maxRows: mobileRows },
       themeName: options.themeName,
       title: options.title,
       stabilizeMs,
       callDiffByFile: options.callDiffByFile,
-    }),
-    captureToHtml(diffContent, {
-      cols: options.mobileCols,
-      maxRows: mobileRows,
-      themeName: options.themeName,
-      title: options.title,
-      stabilizeMs,
-      callDiffByFile: options.callDiffByFile,
+      themeNames: options.themeNames,
+      showSummary: true,
+      collectMarkdown: true,
     }),
     ogImagePromise,
   ])
 
-  return { htmlDesktop, htmlMobile, ogImage }
+  return {
+    html: captured.document,
+    ogImage,
+    markdown: captured.markdown,
+    skippedMarkdown: captured.skippedMarkdown,
+    markdownFromHead: captured.markdownFromHead,
+  }
 }
 
 export interface ReviewRenderOptions extends CaptureOptions {
@@ -861,35 +1199,58 @@ export async function renderReviewToFrame(
 }
 
 /**
- * Capture review and convert to HTML using test renderer
+ * Render a review document (desktop + optional narrow body), with themes when asked.
  */
-export async function captureReviewToHtml(
-  options: ReviewRenderOptions
+async function captureReviewDocument(
+  options: ReviewRenderOptions & {
+    mobile?: { cols: number; maxRows: number }
+    themeNames?: string[]
+  },
 ): Promise<string> {
-  const { frameToHtmlDocument } = await import("./ansi-html.js")
+  const classMap = new StyleClassMap()
+  const desktopFrame = await renderReviewToFrame({ ...options, showNotice: true })
+  const desktopBody = frameToHtml(desktopFrame, { classMap })
 
-  // Render review to captured frame (with notice for web uploads)
-  const frame = await renderReviewToFrame({ ...options, showNotice: true })
+  const mobileFrame = options.mobile
+    ? await renderReviewToFrame({
+      ...options,
+      showNotice: true,
+      cols: options.mobile.cols,
+      maxRows: options.mobile.maxRows,
+    })
+    : null
+  const mobileBody = mobileFrame ? frameToHtml(mobileFrame, { classMap }) : null
 
-  // Get theme colors for HTML output
-  const theme = getResolvedTheme(options.themeName)
-  const backgroundColor = rgbaToHex(theme.background)
-  const textColor = rgbaToHex(theme.text)
+  // Both bodies share the class map, so the last call returns the union
+  const spanCss = mobileBody?.spanCss ?? desktopBody.spanCss
+  const baseTheme = getResolvedTheme(options.themeName)
+  const palette = themePalette(options.themeName)
+  const themes: ThemeVariant[] | undefined = options.themeNames?.length
+    ? buildThemeVariants(options.themeNames, spanCss, options.themeName)
+    : undefined
 
-  // Check if theme was explicitly set (not default)
-  const { themeNames, defaultThemeName } = await import("./themes.js")
-  const customTheme = options.themeName !== defaultThemeName && themeNames.includes(options.themeName)
-
-  return frameToHtmlDocument(frame, {
-    backgroundColor,
-    textColor,
-    autoTheme: !customTheme,
+  return buildHtmlDocument({
+    content: desktopBody.html,
+    mobileContent: mobileBody?.html,
+    cols: options.cols,
+    mobileCols: options.mobile?.cols,
+    spanCss,
+    themes,
+    baseTheme: options.themeName,
+    baseMode: themeMode(baseTheme),
+    lightTheme: "github-light",
     title: options.title,
+    backgroundColor: rgbaToHex(baseTheme.background),
+    textColor: rgbaToHex(baseTheme.text),
+    mutedColor: palette.muted,
+    linkColor: palette.link,
+    // Themes replace the invert filter; keep it for the single-theme path
+    autoTheme: !themes,
   })
 }
 
 /**
- * Generate desktop and mobile HTML versions for review in parallel
+ * Generate one review document (desktop + narrow body) and the OG image
  */
 export async function captureReviewResponsiveHtml(
   options: {
@@ -904,8 +1265,10 @@ export async function captureReviewResponsiveHtml(
     stabilizeMs?: number
     /** Skip OG image generation for faster URL delivery */
     skipOgImage?: boolean
+    /** Themes offered in the page picker */
+    themeNames?: string[]
   }
-): Promise<{ htmlDesktop: string; htmlMobile: string; ogImage: Buffer | null }> {
+): Promise<{ html: string; ogImage: Buffer | null }> {
   // Max row values - content-fitting will grow to actual content size
   // These act as upper bounds to prevent runaway memory usage
   const desktopRows = Math.max(options.baseRows * 3, 5000)
@@ -932,53 +1295,54 @@ export async function captureReviewResponsiveHtml(
         }
       })()
 
-  const [htmlDesktop, htmlMobile, ogImage] = await Promise.all([
-    captureReviewToHtml({
+  const [html, ogImage] = await Promise.all([
+    captureReviewDocument({
       hunks: options.hunks,
       reviewData: options.reviewData,
       cols: options.desktopCols,
       maxRows: desktopRows,
+      mobile: { cols: options.mobileCols, maxRows: mobileRows },
       themeName: options.themeName,
       title: options.title,
       stabilizeMs,
-    }),
-    captureReviewToHtml({
-      hunks: options.hunks,
-      reviewData: options.reviewData,
-      cols: options.mobileCols,
-      maxRows: mobileRows,
-      themeName: options.themeName,
-      title: options.title,
-      stabilizeMs,
+      themeNames: options.themeNames,
     }),
     ogImagePromise,
   ])
 
-  return { htmlDesktop, htmlMobile, ogImage }
+  return { html, ogImage }
 }
 
 /**
- * Upload HTML to the critique.work worker
+ * Upload a page (or markdown files) to the worker
  */
 export async function uploadHtml({
-  htmlDesktop,
-  htmlMobile,
+  html,
   ogImage,
   patch,
   password,
+  markdown,
+  palettes,
+  defaultTheme,
 }: {
-  htmlDesktop: string
-  htmlMobile: string
+  /** Page HTML. Optional when `markdown` is provided (standalone markdown preview). */
+  html?: string
   ogImage?: Buffer | null
   patch?: string
   /** Viewers must type this password. The worker drops the OG image for protected diffs. */
   password?: string
+  /** Markdown previews: path -> file content */
+  markdown?: Record<string, string>
+  /** Every theme palette, so markdown previews follow the reader's choice */
+  palettes?: Record<string, MarkdownPalette>
+  /** Theme used when the reader has no stored choice */
+  defaultTheme?: string
 }): Promise<UploadResult> {
-  const body: Record<string, string> = { 
-    html: htmlDesktop, 
-    htmlMobile,
-  }
+  const body: Record<string, unknown> = {}
 
+  if (html) {
+    body.html = html
+  }
   if (password) {
     body.password = password
   }
@@ -991,6 +1355,16 @@ export async function uploadHtml({
   // Include raw unified diff (patch) for programmatic access
   if (patch) {
     body.patch = patch
+  }
+
+  if (markdown && Object.keys(markdown).length > 0) {
+    body.markdown = markdown
+  }
+  if (palettes) {
+    body.palettes = palettes
+  }
+  if (defaultTheme) {
+    body.defaultTheme = defaultTheme
   }
 
   const licenseKey = loadStoredLicenseKey()
@@ -1076,7 +1450,7 @@ export async function openInBrowser(url: string): Promise<void> {
  * Write content to a temp file and return the path
  */
 export function writeTempFile(content: string, prefix: string, ext: string): string {
-  const filePath = join(tmpdir(), `${prefix}-${Date.now()}${ext}`)
+  const filePath = path.join(tmpdir(), `${prefix}-${Date.now()}${ext}`)
   fs.writeFileSync(filePath, content)
   return filePath
 }

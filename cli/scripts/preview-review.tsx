@@ -266,18 +266,19 @@ async function main() {
   if (webMode) {
     console.log("Capturing preview...")
     
-    const { htmlDesktop, htmlMobile, ogImage } = await captureReviewResponsiveHtml({
+    const { html, ogImage } = await captureReviewResponsiveHtml({
       hunks: exampleHunks,
       reviewData: exampleReviewData,
       desktopCols: 200,
-      mobileCols: 80,
+      mobileCols: 50,
       baseRows: 200,
       themeName: "github",
       title: "Review Preview",
+      themeNames: (await import("../src/themes.js")).themeNames,
     })
 
     console.log("Uploading...")
-    const result = await uploadHtml({ htmlDesktop, htmlMobile, ogImage })
+    const result = await uploadHtml({ html, ogImage })
     console.log(`\nPreview URL: ${result.url}`)
     console.log("(expires in 7 days)")
     return

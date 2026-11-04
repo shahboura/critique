@@ -119,3 +119,111 @@ describe("preview worker upload and reads", () => {
     }
   }, 120_000)
 })
+
+describe("markdown previews", () => {
+  test("markdown-only upload renders, serves, and deletes", async () => {
+    const ownerSecret = `md-owner-${randomHex(8)}`
+    const path = "docs/preview.md"
+    const content = "# Hello\n\nBody with [link](https://example.com) and [bad](javascript:alert(1))\n\n```ts\nconst x = 1\n```\n"
+    let uploadedId: string | null = null
+
+    try {
+      const uploadResponse = await fetch(`${BASE_URL}/upload`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", [OWNER_SECRET_HEADER]: ownerSecret },
+        body: JSON.stringify({
+          markdown: { [path]: content },
+          palettes: {
+            github: { background: "#000000", text: "#ffffff", muted: "#888888", link: "#00aaff" },
+            nord: { background: "#2e3440", text: "#eceff4", muted: "#8b95a7", link: "#81a1c1" },
+          },
+          defaultTheme: "github",
+        }),
+      })
+      expect(uploadResponse.status).toBe(200)
+      const uploadJson = asRecord(await uploadResponse.json(), "upload")
+      const id = getString(uploadJson, "id", "upload")
+      uploadedId = id
+
+      // Markdown-only ids serve the first file at /v/:id
+      const pageResponse = await fetch(`${BASE_URL}/v/${id}`)
+      expect(pageResponse.status).toBe(200)
+      const pageHtml = await pageResponse.text()
+      expect(pageHtml).toContain("<h1")
+      expect(pageHtml).toContain("Hello")
+      expect(pageHtml).not.toContain("javascript:")
+      // Standalone pages follow the reader's stored theme
+      expect(pageHtml).toContain('html[data-md-theme="nord"]')
+      expect(pageHtml).toContain("critique-theme")
+
+      const mdResponse = await fetch(`${BASE_URL}/v/${id}/md?path=${encodeURIComponent(path)}`)
+      expect(mdResponse.status).toBe(200)
+      expect(await mdResponse.text()).toContain("Hello")
+
+      // The diff page passes its theme by name; the worker resolves the palette
+      const themedResponse = await fetch(`${BASE_URL}/v/${id}/md?path=${encodeURIComponent(path)}&theme=nord`)
+      expect(themedResponse.status).toBe(200)
+      expect(await themedResponse.text()).toContain("--bg: #2e3440")
+
+      // Only stored paths are reachable
+      const missingResponse = await fetch(`${BASE_URL}/v/${id}/md?path=../secret.md`)
+      expect(missingResponse.status).toBe(404)
+
+      // HEAD matches GET so unfurlers and uptime checks work
+      const headResponse = await fetch(`${BASE_URL}/v/${id}`, { method: "HEAD" })
+      expect(headResponse.status).toBe(200)
+
+      const deleteResponse = await fetch(`${BASE_URL}/v/${id}`, {
+        method: "DELETE",
+        headers: { [OWNER_SECRET_HEADER]: ownerSecret },
+      })
+      expect(deleteResponse.status).toBe(200)
+      uploadedId = null
+    } finally {
+      if (uploadedId) {
+        await fetch(`${BASE_URL}/v/${uploadedId}`, {
+          method: "DELETE",
+          headers: { [OWNER_SECRET_HEADER]: ownerSecret },
+        }).catch(() => {})
+      }
+    }
+  })
+
+  test("markdown pages are password gated", async () => {
+    const ownerSecret = `md-pw-owner-${randomHex(8)}`
+    const password = `pw-${randomHex(6)}`
+    const path = "docs/locked.md"
+    const content = "# Locked\n\nsecret body\n"
+
+    const uploadResponse = await fetch(`${BASE_URL}/upload`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", [OWNER_SECRET_HEADER]: ownerSecret },
+      body: JSON.stringify({ markdown: { [path]: content }, password }),
+    })
+    expect(uploadResponse.status).toBe(200)
+    const uploadJson = asRecord(await uploadResponse.json(), "upload")
+    const id = getString(uploadJson, "id", "upload")
+
+    try {
+      const lockedResponse = await fetch(`${BASE_URL}/v/${id}/md?path=${encodeURIComponent(path)}`)
+      const lockedHtml = await lockedResponse.text()
+      expect(lockedHtml).toContain("Password")
+      expect(lockedHtml).not.toContain("secret body")
+      expect(lockedResponse.headers.get("cache-control")).toContain("no-store")
+
+      const unlockedResponse = await fetch(`${BASE_URL}/v/${id}/md?path=${encodeURIComponent(path)}`, {
+        headers: { "X-Critique-Password": password },
+      })
+      expect(unlockedResponse.status).toBe(200)
+      expect(await unlockedResponse.text()).toContain("secret body")
+      expect(unlockedResponse.headers.get("cache-control")).toContain("no-store")
+      expect(unlockedResponse.headers.get("content-security-policy")).toContain("script-src 'nonce-")
+      expect(unlockedResponse.headers.get("referrer-policy")).toBe("no-referrer")
+    } finally {
+      await fetch(`${BASE_URL}/v/${id}`, {
+        method: "DELETE",
+        headers: { [OWNER_SECRET_HEADER]: ownerSecret },
+      }).catch(() => {})
+    }
+  })
+})

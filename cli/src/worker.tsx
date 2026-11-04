@@ -4,7 +4,7 @@
 // Endpoints: POST /upload, GET /v/:id (view), GET /raw/:id (debug), /a/* (agentation API).
 // Payments: GET /buy, GET /success, POST /stripe/webhook.
 
-import { Hono } from "hono"
+import { Hono, type Context } from "hono"
 import { cors } from "hono/cors"
 import { stream } from "hono/streaming"
 import type { KVNamespace } from "@cloudflare/workers-types"
@@ -13,6 +13,7 @@ import { Resend } from "resend"
 import { agentationApi } from "./agentation-api.js"
 import { readWidgetOptions } from "./widget-options.js"
 import { annotationsContextRoute } from "./routes/annotations-context.js"
+import { markdownCsp, renderMarkdownPage, type MarkdownPalette } from "./markdown-page.js"
 import { BUILD_ID } from "./build-info.js"
 import { version as pkgVersion } from "../package.json"
 import {
@@ -64,6 +65,55 @@ type LicenseRecord = {
 const app = new Hono<{ Bindings: Bindings; Variables: { userId: string } }>()
 
 const SEVEN_DAYS = 60 * 60 * 24 * 7
+
+type StoredMarkdown = {
+  palettes?: Record<string, MarkdownPalette>
+  defaultTheme?: string
+  files: Record<string, string>
+}
+
+/** Palette named by the preview link; unknown or oversized names fall back */
+function themePaletteFrom(stored: StoredMarkdown, themeName?: string): MarkdownPalette | undefined {
+  if (!themeName || themeName.length > 64 || !stored.palettes) return undefined
+  if (!Object.prototype.hasOwnProperty.call(stored.palettes, themeName)) return undefined
+  return stored.palettes[themeName]
+}
+
+/** One place for the markdown page's headers, nonce and rendering */
+function markdownResponse(c: Context, options: {
+  id: string
+  stored: StoredMarkdown
+  path: string
+  themeName?: string
+  backLink: boolean
+  /** Protected ids are never cacheable, whatever the caller says */
+  protected: boolean
+}) {
+  const content = options.stored.files?.[options.path]
+  if (typeof content !== "string") {
+    return c.text("Not found", 404)
+  }
+
+  const themePalette = themePaletteFrom(options.stored, options.themeName)
+  // A named theme renders as the only palette; otherwise the page keeps the map
+  const palettes = themePalette && options.themeName
+    ? { [options.themeName]: themePalette }
+    : options.stored.palettes
+  const defaultTheme = themePalette ? options.themeName : options.stored.defaultTheme
+  const nonce = crypto.randomUUID().replace(/-/g, "")
+  c.header("Content-Security-Policy", markdownCsp(nonce))
+  c.header("Referrer-Policy", "no-referrer")
+  c.header("Cache-Control", options.protected || options.themeName ? "private, no-store" : "public, max-age=86400")
+  return c.html(renderMarkdownPage({
+    id: options.id,
+    path: options.path,
+    content,
+    palettes,
+    defaultTheme,
+    nonce,
+    backLink: options.backLink,
+  }))
+}
 const LICENSE_HEADER = "X-Critique-License"
 const OWNER_SECRET_HEADER = "X-Critique-Owner-Secret"
 const STRIPE_YEARLY_PRICE_ID = "price_1Su9CZBekrVyz93iMIEnjPOk"
@@ -166,6 +216,23 @@ function toHex(buffer: ArrayBuffer): string {
   return Array.from(new Uint8Array(buffer))
     .map((b) => b.toString(16).padStart(2, "0"))
     .join("")
+}
+
+/** Stable JSON for markdown uploads so the id does not depend on key order */
+function canonicalMarkdown(
+  files: Record<string, string>,
+  palettes?: Record<string, MarkdownPalette>,
+  defaultTheme?: string,
+): string {
+  const sorted: Record<string, string> = {}
+  for (const key of Object.keys(files).sort()) {
+    sorted[key] = files[key]!
+  }
+  return JSON.stringify({
+    palettes: palettes ?? null,
+    defaultTheme: defaultTheme ?? null,
+    files: sorted,
+  })
 }
 
 async function computeStripeSignature(secret: string, payload: string): Promise<string> {
@@ -290,6 +357,15 @@ class CritiqueKv {
     await this.setCompressedTextValue(`${id}-patch`, patch, PATCH_CONTENT_TYPE, ttlSeconds)
   }
 
+  /** Markdown previews stored with the upload: { palettes, defaultTheme, files } JSON */
+  async getMarkdown(id: string): Promise<string | null> {
+    return this.getTextValue(`${id}-md`)
+  }
+
+  async setMarkdown(id: string, json: string, ttlSeconds?: number): Promise<void> {
+    await this.setCompressedTextValue(`${id}-md`, json, "application/json", ttlSeconds)
+  }
+
   async getOgImage(id: string): Promise<ArrayBuffer | null> {
     return this.getBinaryValue(`og-${id}`)
   }
@@ -342,6 +418,7 @@ class CritiqueKv {
       this.kv.delete(id),
       this.kv.delete(`${id}-mobile`),
       this.kv.delete(`${id}-patch`),
+      this.kv.delete(`${id}-md`),
       this.kv.delete(`og-${id}`),
       this.kv.delete(`owner:${id}`),
       this.kv.delete(passwordKvKey(id)),
@@ -472,10 +549,40 @@ function extractTitle(html: string): string {
 app.post("/upload", async (c) => {
   try {
     const kv = new CritiqueKv(c.env.CRITIQUE_KV)
-    const body = await c.req.json<{ html: string; htmlMobile?: string; ogImage?: string; patch?: string; password?: string }>()
+    const body = await c.req.json<{
+      html?: string
+      htmlMobile?: string
+      ogImage?: string
+      patch?: string
+      password?: string
+      markdown?: Record<string, string>
+      palettes?: Record<string, MarkdownPalette>
+      defaultTheme?: string
+    }>()
 
-    if (!body.html || typeof body.html !== "string") {
-      return c.json({ error: "Missing or invalid 'html' field" }, 400)
+    const htmlInput = typeof body.html === "string" && body.html.length > 0 ? body.html : undefined
+    // Only markdown files with string content: drops objects, prototype keys and non-.md paths
+    const markdown = body.markdown && typeof body.markdown === "object"
+      ? Object.fromEntries(
+          Object.entries(body.markdown).filter(
+            ([key, value]) => typeof value === "string" && key.toLowerCase().endsWith(".md"),
+          ),
+        )
+      : undefined
+    const markdownJson = markdown && Object.keys(markdown).length > 0
+      ? canonicalMarkdown(markdown, body.palettes, body.defaultTheme)
+      : undefined
+
+    if (!htmlInput && !markdownJson) {
+      return c.json({ error: "Missing 'html' or 'markdown' field" }, 400)
+    }
+
+    // Server-side caps: the CLI caps too, but the endpoint is public
+    if (markdown && Object.keys(markdown).length > 50) {
+      return c.json({ error: "Too many markdown files" }, 413)
+    }
+    if (markdownJson && markdownJson.length > 4 * 1024 * 1024) {
+      return c.json({ error: "Markdown payload too large" }, 413)
     }
     if (body.password !== undefined && !isValidPassword(body.password)) {
       return c.json({ error: `Password must be 1 to ${MAX_PASSWORD_LENGTH} characters` }, 400)
@@ -484,9 +591,13 @@ app.post("/upload", async (c) => {
 
     // Public diffs: first 32 hex chars of the HTML hash (128 bits, enables deduplication).
     // Protected diffs: "p" + random hex, so the ID itself marks the diff as protected.
+    // Hash exactly what is stored, so the same upload always maps to the same id.
+    // Both seeds are scheme-tagged: without a prefix a crafted HTML body equal to
+    // "md:<json>" would alias a markdown upload and overwrite its owner secret.
+    const idSeed = htmlInput ? `html:${htmlInput}` : `md:${markdownJson}`
     const id = password
       ? generateProtectedId()
-      : toHex(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(body.html))).slice(0, 32)
+      : toHex(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(idSeed))).slice(0, 32)
 
     const origin = getPublicUrl(c)
 
@@ -519,15 +630,23 @@ app.post("/upload", async (c) => {
     // Always inject OG tags with the deterministic URL.
     // The image may arrive later via PATCH /upload/:id/og —
     // the URL will already be correct in the stored HTML.
-    const ogImageUrl = password ? undefined : `${origin}/og/${id}.png`
-    const title = extractTitle(body.html)
-    const htmlDesktop = ogImageUrl ? injectOgTags(body.html, ogImageUrl, title) : body.html
+    // Markdown-only uploads have no HTML to decorate and no OG image.
+    const ogImageUrl = password || !htmlInput ? undefined : `${origin}/og/${id}.png`
+    const title = htmlInput ? extractTitle(htmlInput) : "Critique Markdown"
+    const htmlDesktop = htmlInput && ogImageUrl ? injectOgTags(htmlInput, ogImageUrl, title) : htmlInput
     const htmlMobile = body.htmlMobile && ogImageUrl
       ? injectOgTags(body.htmlMobile, ogImageUrl, title)
       : body.htmlMobile
 
     // Store desktop version in KV
-    await kv.setHtml(id, htmlDesktop, ttlSeconds)
+    if (htmlDesktop) {
+      await kv.setHtml(id, htmlDesktop, ttlSeconds)
+    }
+
+    // Store markdown previews next to the page, with the same lifetime
+    if (markdownJson) {
+      await kv.setMarkdown(id, markdownJson, ttlSeconds)
+    }
 
     // Which renderer produced this page. A mismatch across uploads means a
     // mixed-version deployment, which is otherwise invisible.
@@ -851,9 +970,10 @@ async function handleView(c: any) {
   // Check for version query param
   const version = c.req.query("v")
 
-  // If no version specified and mobile device detected, redirect to ?v=mobile
-  // This is a fallback - client JS also handles this redirect
-  if (!version && isMobileDevice(c)) {
+  // If no version specified and mobile device detected, redirect to ?v=mobile.
+  // Only pages uploaded before the responsive merge have a mobile document;
+  // new pages already carry both bodies, so they must never redirect.
+  if (!version && isMobileDevice(c) && (await kv.getMobileHtml(id))) {
     const url = new URL(c.req.url)
     url.searchParams.set("v", "mobile")
     return c.redirect(new URL(url.pathname + url.search, getPublicUrl(c)).toString(), 302)
@@ -883,6 +1003,18 @@ async function handleView(c: any) {
   }
 
   if (!html) {
+    // Markdown-only upload: serve the first stored file instead of 404
+    const stored = safeJsonParse<StoredMarkdown>(await kv.getMarkdown(id))
+    const firstPath = stored ? Object.keys(stored.files)[0] : undefined
+    if (stored && firstPath) {
+      return markdownResponse(c, {
+        id,
+        stored,
+        path: firstPath,
+        backLink: false,
+        protected: access.protected,
+      })
+    }
     return c.text("Not found", 404)
   }
 
@@ -899,6 +1031,35 @@ async function handleView(c: any) {
   }).replace(/</g, "\\u003c")
   const commentsSnippet = `
 <script>window.__CRITIQUE_CONFIG__=${configJson}</script>
+<script>
+// Bind markdown preview links: the diff id only exists here, at serve time
+(function () {
+  var config = window.__CRITIQUE_CONFIG__;
+  if (!config || !config.sessionId) return;
+
+  function bind() {
+    // The reader's selected theme travels as a name; the worker owns the palette
+    var select = document.getElementById("theme-select");
+    var theme = select ? select.value : "";
+    var links = document.querySelectorAll("[data-md-preview]");
+    for (var i = 0; i < links.length; i++) {
+      var path = links[i].getAttribute("data-path");
+      if (!path) continue;
+      var href = "/v/" + config.sessionId + "/md?path=" + encodeURIComponent(path);
+      if (theme) href += "&theme=" + encodeURIComponent(theme);
+      links[i].setAttribute("href", href);
+    }
+  }
+
+  bind();
+  if (window.MutationObserver) {
+    new MutationObserver(bind).observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ["data-theme"],
+    });
+  }
+})();
+</script>
 <script src="/agentation-widget.js?v=${encodeURIComponent(BUILD_ID === "dev" ? pkgVersion : BUILD_ID)}"></script>`
   html = html.replace("</body>", `${commentsSnippet}\n</body>`)
 
@@ -920,6 +1081,42 @@ async function handleView(c: any) {
     }
   })
 }
+
+// Markdown preview for one changed file: GET /v/:id/md?path=<path>
+app.get("/v/:id/md", async (c) => {
+  const id = c.req.param("id")
+  if (!DIFF_ID_REGEX.test(id)) {
+    return c.text("Invalid ID", 400)
+  }
+
+  const access = await checkDiffAccess(c, id)
+  if (!access.allowed) {
+    return renderLockPage(c, { id })
+  }
+  if (access.protected) {
+    rememberPassword(c, access.password)
+  }
+
+  const kv = new CritiqueKv(c.env.CRITIQUE_KV)
+  const stored = safeJsonParse<StoredMarkdown>(await kv.getMarkdown(id))
+  const path = c.req.query("path") ?? ""
+  if (!stored || path.length > 1024 || !Object.prototype.hasOwnProperty.call(stored.files, path)) {
+    return c.text("Not found", 404)
+  }
+
+  // The link carries the reader's theme name; the palette map lives in the upload.
+  // A themed URL is per-reader, so it must not fill the edge cache.
+  const themeName = c.req.query("theme")
+  return markdownResponse(c, {
+    id,
+    stored,
+    path,
+    themeName,
+    // A markdown-only id has no diff page to go back to
+    backLink: Boolean(await kv.getHtml(id)),
+    protected: access.protected,
+  })
+})
 
 app.get("/v/:id", handleView)
 app.get("/view/:id", handleView)
@@ -961,10 +1158,13 @@ app.delete("/v/:id", async (c) => {
     return c.json({ error: "Missing owner secret header" }, 400)
   }
 
-  // Check if diff exists
+  // Check if the diff exists (HTML page or markdown-only upload)
   const html = await kv.getHtml(id)
   if (!html) {
-    return c.json({ error: "Not found" }, 404)
+    const markdown = await kv.getMarkdown(id)
+    if (!markdown) {
+      return c.json({ error: "Not found" }, 404)
+    }
   }
 
   // Check if owner secret was stored
@@ -1025,13 +1225,19 @@ app.get("/raw/:id", async (c) => {
   }
 
   const html = await kv.getHtml(id)
-
-  if (!html) {
-    return c.json({ error: "Not found" }, 404)
+  if (html) {
+    return c.text(html, 200, {
+      "Content-Type": "text/html; charset=utf-8",
+      "Cache-Control": "private, no-store",
+    })
   }
 
-  return c.text(html, 200, {
-    "Content-Type": "text/html; charset=utf-8",
+  // Markdown-only upload: expose the stored markdown for debugging
+  const markdown = await kv.getMarkdown(id)
+  if (!markdown) {
+    return c.json({ error: "Not found" }, 404)
+  }
+  return c.json(safeJsonParse(markdown) ?? { error: "Invalid markdown payload" }, 200, {
     "Cache-Control": "private, no-store",
   })
 })
@@ -1055,7 +1261,13 @@ async function handleHead(c: any) {
   const html = await kv.getHtml(id)
 
   if (!html) {
-    return c.body(null, 404)
+    // Markdown-only uploads exist and serve a 200 GET; keep HEAD consistent
+    const markdown = await kv.getMarkdown(id)
+    if (!markdown) {
+      return c.body(null, 404)
+    }
+    c.header("Content-Type", "text/html; charset=utf-8")
+    return c.body(null, 200)
   }
 
   c.header("Content-Length", String(new TextEncoder().encode(html).byteLength))
