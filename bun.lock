@@ -13,7 +13,7 @@
       "version": "0.6.2",
       "bin": "./dist/cli.js",
       "dependencies": {
-        "@agentclientprotocol/sdk": "^2.2.0",
+        "@agentclientprotocol/sdk": "2.2.0",
         "@clack/prompts": "1.8.1",
         "@opentuah/core": "0.1.97",
         "@opentuah/react": "0.1.97",
