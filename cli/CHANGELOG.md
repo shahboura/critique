@@ -1,3 +1,7 @@
+# 0.7.1
+
+1. **`critique review --model` works with current OpenCode again.** The ACP client moved to `@agentclientprotocol/sdk` 2.x. Current OpenCode ACP servers replaced `session/set_model` with a `model` session config option, so selecting a model failed; the client now uses that option and still falls back to `session/set_model` for `claude-code-acp`. Reviews without `--model`, session context and resume are unchanged.
+
 # 0.7.0
 
 1. **Responsive web previews with themes.** Every diff page now offers a theme picker with the bundled themes and renders one responsive page that switches to a narrower capture on phones, instead of uploading a second document and redirecting to it. The top of the page summarises files and added/removed lines, and markdown files get a `preview` link that opens the rendered document in the theme you are reading the diff with. Links uploaded before this change keep their stored mobile document and the auto mobile redirect.
