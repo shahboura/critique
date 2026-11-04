@@ -3,10 +3,12 @@
 // Usage: bun run scripts/capture-acp-events.ts [output-file]
 
 import {
-  ClientSideConnection,
+  client,
+  methods,
   ndJsonStream,
+  PROTOCOL_VERSION,
   type SessionNotification,
-} from "@agentclientprotocol/sdk"
+} from "@agentclientprotocol/sdk/unstable"
 import fs from "fs"
 
 const outputFile = process.argv[2] || "acp-events.json"
@@ -38,33 +40,29 @@ const stdin = new WritableStream<Uint8Array>({
 const stdout = procStdout as ReadableStream<Uint8Array>
 const stream = ndJsonStream(stdin, stdout)
 
-const client = new ClientSideConnection(
-  () => ({
-    async sessionUpdate(params: SessionNotification) {
-      events.push(params)
-      // Log event type for visibility
-      const update = params.update
-      console.log(`[${events.length}] ${update.sessionUpdate}`)
-    },
-    async requestPermission(params) {
-      console.log("Permission requested:", params.toolCall?.title)
-      const allowOption = params.options?.find(
-        (o) => o.kind === "allow_once" || o.kind === "allow_always",
-      )
-      if (allowOption) {
-        return {
-          outcome: { outcome: "selected" as const, optionId: allowOption.optionId },
-        }
+const conn = client()
+  .onNotification(methods.client.session.update, ({ params }) => {
+    events.push(params)
+    // Log event type for visibility
+    console.log(`[${events.length}] ${params.update.sessionUpdate}`)
+  })
+  .onRequest(methods.client.session.requestPermission, ({ params }) => {
+    console.log("Permission requested:", params.toolCall?.title)
+    const allowOption = params.options?.find(
+      (o) => o.kind === "allow_once" || o.kind === "allow_always",
+    )
+    if (allowOption) {
+      return {
+        outcome: { outcome: "selected" as const, optionId: allowOption.optionId },
       }
-      return { outcome: { outcome: "cancelled" as const } }
-    },
-  }),
-  stream,
-)
+    }
+    return { outcome: { outcome: "cancelled" as const } }
+  })
+  .connect(stream)
 
 console.log("Initializing ACP connection...")
-await client.initialize({
-  protocolVersion: 1,
+await conn.agent.request(methods.agent.initialize, {
+  protocolVersion: PROTOCOL_VERSION,
   clientCapabilities: {},
 })
 console.log("Connected!")
@@ -73,7 +71,7 @@ const cwd = process.cwd()
 
 // Create new session
 console.log("Creating new session...")
-const { sessionId } = await client.newSession({
+const { sessionId } = await conn.agent.request(methods.agent.session.new, {
   cwd,
   mcpServers: [],
 })
@@ -86,7 +84,7 @@ console.log("Sending prompt...")
 console.log("---")
 
 try {
-  await client.prompt({
+  await conn.agent.request(methods.agent.session.prompt, {
     sessionId,
     prompt: [{ type: "text", text: prompt }],
   })

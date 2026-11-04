@@ -2,7 +2,7 @@
 // @ts-nocheck - Test assertions use array access after length checks
 
 import { describe, it, expect } from "bun:test"
-import type { SessionNotification } from "@agentclientprotocol/sdk"
+import type { SessionNotification } from "@agentclientprotocol/sdk/unstable"
 import {
   formatNotification,
   formatNotifications,

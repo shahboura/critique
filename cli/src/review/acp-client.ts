@@ -3,12 +3,13 @@
 // and creating AI-powered review sessions with streaming updates.
 
 import {
-  ClientSideConnection,
+  client,
+  methods,
   ndJsonStream,
+  PROTOCOL_VERSION,
+  type ClientConnection,
   type SessionNotification,
-  type SessionInfo as AcpSessionInfo,
-
-} from "@agentclientprotocol/sdk"
+} from "@agentclientprotocol/sdk/unstable"
 import type { SessionInfo, SessionContent } from "./types.js"
 import { logger } from "../logger.js"
 import fs from "fs"
@@ -23,7 +24,7 @@ export type AgentType = "opencode" | "claude"
  */
 export class AcpClient {
   private proc: ReturnType<typeof Bun.spawn> | null = null
-  private client: ClientSideConnection | null = null
+  private client: ClientConnection | null = null
   private sessionUpdates: Map<string, SessionNotification[]> = new Map()
   private onUpdateCallback: ((notification: SessionNotification) => void) | null = null
   private agent: AgentType
@@ -103,55 +104,53 @@ export class AcpClient {
     // Create the ndjson stream for ACP communication
     const stream = ndJsonStream(stdin, stdout)
 
-    // Bind sessionUpdates and onUpdateCallback to use in the handler
+    // Bind sessionUpdates and onUpdateCallback to use in the handlers
     const sessionUpdates = this.sessionUpdates
     const onUpdateCallback = this.onUpdateCallback
-    this.client = new ClientSideConnection(
-      () => ({
-        async sessionUpdate(params: SessionNotification) {
-          const updates = sessionUpdates.get(params.sessionId) || []
-          updates.push(params)
-          sessionUpdates.set(params.sessionId, updates)
-          // Call the update callback if provided
-          if (onUpdateCallback) {
-            onUpdateCallback(params)
-          }
-        },
-        async requestPermission(params) {
-          // Auto-approve all tool calls for review mode
-          // The AI needs to write to temp files for YAML output
-          logger.info("Permission requested", {
-            tool: params.toolCall?.title,
-            options: params.options?.map(o => ({ id: o.optionId, kind: o.kind }))
-          })
+    const app = client()
+      .onNotification(methods.client.session.update, ({ params }) => {
+        const updates = sessionUpdates.get(params.sessionId) || []
+        updates.push(params)
+        sessionUpdates.set(params.sessionId, updates)
+        // Call the update callback if provided
+        if (onUpdateCallback) {
+          onUpdateCallback(params)
+        }
+      })
+      .onRequest(methods.client.session.requestPermission, ({ params }) => {
+        // Auto-approve all tool calls for review mode
+        // The AI needs to write to temp files for YAML output
+        logger.info("Permission requested", {
+          tool: params.toolCall?.title,
+          options: params.options?.map(o => ({ id: o.optionId, kind: o.kind }))
+        })
 
-          // Find an "allow" option from the provided options
-          const allowOption = params.options?.find(
-            o => o.kind === "allow_once" || o.kind === "allow_always"
-          )
+        // Find an "allow" option from the provided options
+        const allowOption = params.options?.find(
+          o => o.kind === "allow_once" || o.kind === "allow_always"
+        )
 
-          if (allowOption) {
-            logger.info("Auto-approving with option", { optionId: allowOption.optionId })
-            return {
-              outcome: {
-                outcome: "selected" as const,
-                optionId: allowOption.optionId
-              }
+        if (allowOption) {
+          logger.info("Auto-approving with option", { optionId: allowOption.optionId })
+          return {
+            outcome: {
+              outcome: "selected" as const,
+              optionId: allowOption.optionId
             }
           }
+        }
 
-          // If no allow option found, cancel (shouldn't happen)
-          logger.warn("No allow option found, cancelling")
-          return { outcome: { outcome: "cancelled" as const } }
-        },
-      }),
-      stream,
-    )
+        // If no allow option found, cancel (shouldn't happen)
+        logger.warn("No allow option found, cancelling")
+        return { outcome: { outcome: "cancelled" as const } }
+      })
+
+    this.client = app.connect(stream)
 
     // Initialize the connection
     logger.info("Initializing ACP connection...")
-    await this.client.initialize({
-      protocolVersion: 1,
+    await this.client.agent.request(methods.agent.initialize, {
+      protocolVersion: PROTOCOL_VERSION,
       clientCapabilities: {},
     })
     logger.info("ACP connection established")
@@ -159,7 +158,7 @@ export class AcpClient {
 
   /**
    * List sessions for the given working directory
-   * Uses ACP unstable_listSessions, falls back to file parsing for Claude
+   * Uses ACP session/list, falls back to file parsing for Claude
    * @param cwd - Working directory to filter sessions by
    * @param limit - Maximum number of sessions to return (default: 10)
    */
@@ -169,14 +168,14 @@ export class AcpClient {
       throw new Error("Client connection failed")
     }
 
-    // Try ACP unstable_listSessions first
+    // Try ACP session/list first
     try {
       const sessions: SessionInfo[] = []
       let cursor: string | undefined
 
       // Paginate until we have enough sessions or no more results
       while (sessions.length < limit) {
-        const response = await this.client.unstable_listSessions({
+        const response = await this.client.agent.request(methods.agent.session.list, {
           cwd,
           cursor,
         })
@@ -299,14 +298,12 @@ export class AcpClient {
     // Clear any existing updates for this session
     this.sessionUpdates.set(sessionId, [])
 
-    // Load the session - this will stream updates via sessionUpdate handler
-    if (this.client.loadSession) {
-      await this.client.loadSession({
-        sessionId,
-        cwd,
-        mcpServers: [],
-      })
-    }
+    // Load the session - this will stream updates via the session/update handler
+    await this.client.agent.request(methods.agent.session.load, {
+      sessionId,
+      cwd,
+      mcpServers: [],
+    })
 
     // Return collected notifications
     return {
@@ -337,7 +334,7 @@ export class AcpClient {
     logger.info("Creating new ACP session...", { cwd, outputPath, model: options?.model })
 
     // Create new session with _meta to mark it as a critique session
-    const response = await this.client.newSession({
+    const response = await this.client.agent.request(methods.agent.session.new, {
       cwd,
       mcpServers: [],
       _meta: { critique: true },
@@ -345,13 +342,28 @@ export class AcpClient {
     const { sessionId } = response
     logger.info("Session created", { sessionId })
 
-    // Set model if specified
+    // Set model if specified. The agent advertises models as a "model" config option.
     if (options?.model) {
-      const availableModels = response.models?.availableModels ?? []
-      const modelExists = availableModels.some(m => m.modelId === options.model)
+      const modelOption = response.configOptions?.find(
+        o => o.category === "model" || o.id === "model"
+      )
+      const availableModels: Array<{ value: string }> = []
+      if (modelOption?.type === "select") {
+        for (const option of modelOption.options) {
+          if ("group" in option) {
+            availableModels.push(...option.options)
+          } else {
+            availableModels.push(option)
+          }
+        }
+      }
 
-      if (!modelExists) {
-        const modelList = availableModels.map(m => `  ${m.modelId}`).join("\n")
+      if (!modelOption) {
+        throw new Error(`Agent "${this.agent}" does not advertise a model option.`)
+      }
+
+      if (!availableModels.some(m => m.value === options.model)) {
+        const modelList = availableModels.map(m => `  ${m.value}`).join("\n")
         const agentHint = this.agent === "opencode"
           ? "provider/model-id (e.g., anthropic/claude-sonnet-4-20250514)"
           : "model-id (e.g., claude-sonnet-4-20250514)"
@@ -363,9 +375,10 @@ export class AcpClient {
       }
 
       logger.info("Setting model...", { model: options.model })
-      await this.client.unstable_setSessionModel({
+      await this.client.agent.request(methods.agent.session.setConfigOption, {
         sessionId,
-        modelId: options.model,
+        configId: modelOption.id,
+        value: options.model,
       })
       logger.info("Model set successfully")
     }
@@ -381,7 +394,7 @@ export class AcpClient {
 
     // Send the prompt and wait for completion
     try {
-      await this.client.prompt({
+      await this.client.agent.request(methods.agent.session.prompt, {
         sessionId,
         prompt: [{ type: "text", text: prompt }],
       })
@@ -411,7 +424,7 @@ export class AcpClient {
 
     try {
       logger.info("Attempting to resume ACP session...", { sessionId })
-      await this.client.unstable_resumeSession({
+      await this.client.agent.request(methods.agent.session.resume, {
         sessionId,
         cwd,
       })
@@ -434,11 +447,12 @@ export class AcpClient {
    * Close the connection and kill the process
    */
   async close(): Promise<void> {
+    this.client?.close()
+    this.client = null
     if (this.proc) {
       this.proc.kill()
       this.proc = null
     }
-    this.client = null
     this.sessionUpdates.clear()
   }
 }

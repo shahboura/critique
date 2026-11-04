@@ -284,7 +284,7 @@ async function runReviewMode(
     lastToolCount = count;
   };
 
-  const printNotification = (notification: import("@agentclientprotocol/sdk").SessionNotification) => {
+  const printNotification = (notification: import("@agentclientprotocol/sdk/unstable").SessionNotification) => {
     const log = ensureAnalysisLog();
 
     const update = notification.update;

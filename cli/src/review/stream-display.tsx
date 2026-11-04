@@ -4,7 +4,7 @@
 
 import * as React from "react"
 import { SyntaxStyle } from "@opentuah/core"
-import type { SessionNotification } from "@agentclientprotocol/sdk"
+import type { SessionNotification } from "@agentclientprotocol/sdk/unstable"
 import { formatNotifications, SYMBOLS, COLORS, isEditTool, type StreamLine } from "./acp-stream-display.js"
 import { getSyntaxTheme, getResolvedTheme, rgbaToHex } from "../themes.js"
 

@@ -2,7 +2,7 @@
 // Accumulates consecutive chunks (thinking, messages) and formats tool calls
 // with symbols and colors for the streaming display component.
 
-import type { SessionNotification } from "@agentclientprotocol/sdk"
+import type { SessionNotification } from "@agentclientprotocol/sdk/unstable"
 
 /** Types of displayable stream items */
 export type StreamItemType = "thinking" | "message" | "tool_call"

@@ -2,7 +2,7 @@
 // Defines IndexedHunk, ReviewYaml, ReviewGroup structures for diff analysis,
 // plus coverage tracking and session context types for ACP integration.
 
-import type { SessionNotification } from "@agentclientprotocol/sdk"
+import type { SessionNotification } from "@agentclientprotocol/sdk/unstable"
 
 /**
  * A single hunk from the diff with a unique identifier
