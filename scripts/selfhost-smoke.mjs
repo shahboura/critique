@@ -9,12 +9,13 @@
 // generated URL must use it. Without it, URLs must use the request origin.
 // In both modes nothing may leak "critique.work". Exits 0 when all checks pass.
 // Note: EXPECT_PUB only changes the assertions when the public origin differs
-// from CRITIQUE_URL. Creates one short-lived test diff + one comment on the
+// from CRITIQUE_URL. Creates a few short-lived test diffs + one comment on the
 // target instance, so prefer a throwaway instance for re-runs.
 
 const BASE = (process.env.CRITIQUE_URL || "http://127.0.0.1:8787").replace(/\/+$/, "")
 const EXPECT_PUB = process.env.EXPECT_PUB ? process.env.EXPECT_PUB.replace(/\/+$/, "") : null
 const ORIGIN = EXPECT_PUB || BASE
+const MOBILE_UA = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X)"
 
 let fails = 0
 const ok = (name, cond) => {
@@ -31,7 +32,8 @@ const up = await (await fetch(BASE + "/upload", {
   method: "POST",
   headers: { "content-type": "application/json" },
   body: JSON.stringify({
-    html: '<html><head><title>smoke</title><meta name="viewport" content="w"></head><body><p>hi</p></body></html>',
+    // One responsive page, like the CLI uploads today: both bodies + viewport.
+    html: '<html><head><title>smoke</title><meta name="viewport" content="width=device-width, initial-scale=1"></head><body><div id="content"><p>desktop body</p></div><div id="content-m"><p>mobile body</p></div></body></html>',
     patch: "diff --git a/a b/a\n--- a/a\n+++ b/a\n@@ -1 +1 @@\n-a\n+b\n",
     ogImage: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
   }),
@@ -51,11 +53,25 @@ ok(`comments endpoint -> ${ORIGIN}`, html.includes(`"endpoint":"${ORIGIN}/a"`))
 ok("comments widget script present", html.includes("agentation-widget.js?v="))
 ok("no critique.work in view page", !html.includes("critique.work"))
 
-r = await fetch(`${BASE}/v/${id}`, {
-  headers: { "user-agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X)" },
-  redirect: "manual",
-})
-ok("mobile redirect", r.status === 302 && r.headers.get("location") === `${ORIGIN}/v/${id}?v=mobile`)
+// Responsive pages carry both bodies, so a mobile user agent is served as-is.
+r = await fetch(`${BASE}/v/${id}`, { headers: { "user-agent": MOBILE_UA }, redirect: "manual" })
+const mobileHtml = await r.text()
+ok("mobile UA gets the responsive page", r.status === 200)
+ok("responsive page has viewport meta", /<meta[^>]+name="viewport"/.test(mobileHtml))
+ok("responsive page carries both bodies", mobileHtml.includes('id="content"') && mobileHtml.includes('id="content-m"'))
+
+// Legacy pages uploaded before the responsive merge stored a second document;
+// those still redirect mobile user agents to ?v=mobile.
+const legacy = await (await fetch(BASE + "/upload", {
+  method: "POST",
+  headers: { "content-type": "application/json" },
+  body: JSON.stringify({
+    html: '<html><head><title>legacy</title></head><body><p>legacy desktop</p></body></html>',
+    htmlMobile: '<html><head><title>legacy</title></head><body><p>legacy mobile</p></body></html>',
+  }),
+})).json()
+r = await fetch(`${BASE}/v/${legacy.id}`, { headers: { "user-agent": MOBILE_UA }, redirect: "manual" })
+ok("legacy mobile redirect", r.status === 302 && r.headers.get("location") === `${ORIGIN}/v/${legacy.id}?v=mobile`)
 
 r = await fetch(`${BASE}/v/${id}.patch`)
 ok("patch endpoint", r.status === 200 && (await r.text()).startsWith("diff --git"))
