@@ -10,7 +10,7 @@
     },
     "cli": {
       "name": "critique",
-      "version": "0.6.2",
+      "version": "0.7.1",
       "bin": "./dist/cli.js",
       "dependencies": {
         "@agentclientprotocol/sdk": "2.2.0",
@@ -30,7 +30,7 @@
         "zustand": "^5.0.16",
       },
       "devDependencies": {
-        "@cloudflare/workers-types": "^4.20260702.1",
+        "@cloudflare/workers-types": "^5.20261104.1",
         "@critique.work/agentation": "workspace:*",
         "@critique.work/server": "workspace:^",
         "@types/bun": "1.4.4",
@@ -61,7 +61,7 @@
         "hono": "^4.13.16",
       },
       "devDependencies": {
-        "@cloudflare/workers-types": "^4.20260702.1",
+        "@cloudflare/workers-types": "^5.20261104.1",
         "typescript": "^5.9.3",
         "wrangler": "^4.156.1",
       },
@@ -182,7 +182,7 @@
 
     "@cloudflare/workerd-windows-64": ["@cloudflare/workerd-windows-64@1.20261101.1", "", { "os": "win32", "cpu": "x64" }, "sha512-nDRpV9VRhzdrNpJOJNfe6rjOTq5LXFGC6WFCeGR/LA+cNnou1fwF0AQm//zmSDOELPNoQFi6SqjUcloZvy1sKw=="],
 
-    "@cloudflare/workers-types": ["@cloudflare/workers-types@4.20260702.1", "", {}, "sha512-mOhf5TUEB1m2vPrxtqoIGfz0fUC9xyxRDx5gWHy5s+OCo6dcV+g7wI1R7gYCMFohhqF/2y2xeKVwMwCJjfn/WA=="],
+    "@cloudflare/workers-types": ["@cloudflare/workers-types@5.20261104.1", "", {}, "sha512-XSPcK88JXnW/oC82wuXvaP7vgyk2myydugbgOd/RcLKwqkwW0cP09Ozp9ItACa4IAZ7uKtMIfxZpUTXajYVd1Q=="],
 
     "@critique.work/agentation": ["@critique.work/agentation@workspace:packages/agentation"],
 
