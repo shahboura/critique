@@ -44,6 +44,12 @@ jobs:
       - name: Typecheck the CLI
         run: bun run --cwd cli build
 
+      # The only end-to-end check of --stdin paging; 0.6.1 shipped a binary-diff
+      # snapshot regression that nothing here caught.
+      - name: PTY pager tests
+        run: bun test src/stdin-pager.test.ts
+        working-directory: cli
+
       # Serial: the widget tests share jsdom globals and localStorage state, and
       # Node 26 has no --localstorage-file default location outside the runner
       # temp dir. Both flags are the local workaround for the same failures.
