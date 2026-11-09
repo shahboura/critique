@@ -39,7 +39,7 @@
     "sharp": "0.35.5",
     "stripe": "^20.4.1",
     "tuistory": "^0.12.0",
-    "typescript": "^5.9.3",
+    "typescript": "^7.0.2",
     "wrangler": "^4.158.0",
     "marked": "^18.1.3"
   },

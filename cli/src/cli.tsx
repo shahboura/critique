@@ -74,7 +74,7 @@ import {
 } from "./diff-utils.js";
 import type { TreeFileInfo } from "./directory-tree.js";
 import { createCallDiff, type CallDiffByFile } from "./calldiff.js";
-import packageJson from "../package.json" assert { type: "json" };
+import packageJson from "../package.json" with { type: "json" };
 
 
 // Lazy-load watcher only when --watch is used

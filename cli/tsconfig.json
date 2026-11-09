@@ -4,6 +4,8 @@
     // Environment setup & latest features
     "lib": ["ESNext"],
     "target": "ESNext",
+    // TS 6+ defaults `types` to [], so bun globals must be listed explicitly
+    "types": ["bun"],
     "module": "Preserve",
     "moduleDetection": "force",
     "jsx": "react-jsx",
