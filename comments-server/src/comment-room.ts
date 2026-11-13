@@ -7,6 +7,7 @@
 // plus SSE streaming for real-time updates.
 
 import { Agent } from "agents"
+import { writeWithDeadline } from "./sse.js"
 import {
   PATCHABLE_ANNOTATION_FIELDS,
   type RoomState,
@@ -21,11 +22,21 @@ interface CommentRoomEnv {
 }
 
 const MAX_THREAD_CONTENT_LENGTH = 10_000
+// A proxied SSE request can outlive its browser, and a write to that dead
+// stream can stay pending, so abort cleanup alone never fires. Ping on a timer
+// and drop writers that do not accept the bytes within the deadline. The
+// deadline is shorter than the heartbeat, so reaper passes cannot overlap.
+const SSE_HEARTBEAT_MS = 30_000
+const SSE_WRITE_TIMEOUT_MS = 10_000
+const SSE_PING = new TextEncoder().encode(": ping\n\n")
 
 export class CommentRoom extends Agent<CommentRoomEnv, RoomState> {
   initialState: RoomState = { annotations: [] }
 
+  // shortcut: sseClients has no cap, so a public room can hold many live
+  // streams; add a per-room cap and a worker-level rate limit if abuse appears.
   private sseClients = new Set<WritableStreamDefaultWriter>()
+  private sseHeartbeat: ReturnType<typeof setInterval> | undefined
   private sequence = 0
 
   constructor(state: DurableObjectState, env: CommentRoomEnv) {
@@ -247,6 +258,40 @@ export class CommentRoom extends Agent<CommentRoomEnv, RoomState> {
 
   // --- SSE ---
 
+  private startSSEHeartbeat(): void {
+    if (this.sseHeartbeat !== undefined) return
+    this.sseHeartbeat = setInterval(() => {
+      void this.reapSSEClients()
+    }, SSE_HEARTBEAT_MS)
+  }
+
+  private stopSSEHeartbeat(): void {
+    if (this.sseHeartbeat === undefined) return
+    clearInterval(this.sseHeartbeat)
+    this.sseHeartbeat = undefined
+  }
+
+  private removeSSEClient(writer: WritableStreamDefaultWriter): void {
+    if (!this.sseClients.delete(writer)) return
+    // close() waits for queued writes, and the write that timed out never
+    // drains on a dead client; abort discards the queue and ends the response.
+    writer.abort(new Error("sse client gone")).catch(() => undefined)
+    if (this.sseClients.size === 0) this.stopSSEHeartbeat()
+  }
+
+  // shortcut: one missed ping removes the writer. A client that cannot drain
+  // 8 bytes for 10s is effectively gone; EventSource reconnects, but events
+  // emitted in that gap are not replayed.
+  private async reapSSEClients(): Promise<void> {
+    await Promise.all([...this.sseClients].map(async (writer) => {
+      if (!this.sseClients.has(writer)) return
+      if (!(await writeWithDeadline(writer, SSE_PING, SSE_WRITE_TIMEOUT_MS))) {
+        this.removeSSEClient(writer)
+      }
+    }))
+    if (this.sseClients.size === 0) this.stopSSEHeartbeat()
+  }
+
   private emitSSE(
     type: AgentationEvent["type"],
     payload: AgentationEvent["payload"],
@@ -263,10 +308,10 @@ export class CommentRoom extends Agent<CommentRoomEnv, RoomState> {
     const encoded = new TextEncoder().encode(data)
     const activeWriters = Array.from(this.sseClients)
     for (const writer of activeWriters) {
-      writer.write(encoded).catch(() => {
-        this.sseClients.delete(writer)
-        writer.close().catch(() => undefined)
-      })
+      // Only the ping judges liveness: a payload write on a slow client can
+      // legitimately take longer than the ping deadline. A dead writer's write
+      // never settles and is reaped by the heartbeat.
+      writer.write(encoded).catch(() => this.removeSSEClient(writer))
     }
     return activeWriters.length
   }
@@ -436,21 +481,24 @@ export class CommentRoom extends Agent<CommentRoomEnv, RoomState> {
     const { readable, writable } = new TransformStream()
     const writer = writable.getWriter()
     this.sseClients.add(writer)
+    this.startSSEHeartbeat()
 
     let cleanedUp = false
     const cleanup = () => {
       if (cleanedUp) return
       cleanedUp = true
-      this.sseClients.delete(writer)
-      writer.close().catch(() => undefined)
+      request.signal.removeEventListener("abort", cleanup)
+      this.removeSSEClient(writer)
     }
     request.signal.addEventListener("abort", cleanup, { once: true })
 
     // Send initial connection event
     const connectEvent = `event: connected\ndata: ${JSON.stringify({ sessionId: this.name })}\n\n`
-    writer.write(new TextEncoder().encode(connectEvent)).catch(() => {
-      cleanup()
-    })
+    void writeWithDeadline(writer, new TextEncoder().encode(connectEvent), SSE_WRITE_TIMEOUT_MS)
+      .then((alive) => {
+        if (!alive) cleanup()
+      })
+      .catch(() => cleanup())
 
     return new Response(readable, {
       headers: {
