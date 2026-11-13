@@ -66,6 +66,13 @@ jobs:
         working-directory: cli
         run: bun test src/agentation-api.test.ts
 
+      - name: KV protocol tests
+        working-directory: cli
+        run: bun test ./kv-protocol.test.js
+
+      - name: KV migration tests
+        run: bun test ./scripts/migrate-kv.test.ts
+
       - name: Upstream check script
         run: |
           bun test scripts/check-agentation-upstream.test.ts

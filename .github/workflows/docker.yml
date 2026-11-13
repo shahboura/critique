@@ -82,15 +82,20 @@ jobs:
           docker pull "$image"
           docker rm -f smoke 2>/dev/null || true
           docker run -d --name smoke \
+            -p 127.0.0.1:18787:8787 \
             -e PUBLIC_URL=http://smoke.test "$image"
           code=""
           for _ in $(seq 1 90); do
-            code=$(docker exec smoke node -e 'fetch("http://127.0.0.1:8787/",{redirect:"manual"}).then(r=>console.log(r.status)).catch(()=>process.exit(1))' 2>/dev/null || true)
-            [ "$code" = "302" ] && break
+            code=$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:18787/a/health || true)
+            [ "$code" = "200" ] && break
             sleep 1
           done
-          if [ "$code" != "302" ]; then docker logs smoke | tail -30; exit 1; fi
-          docker exec -e EXPECT_PUB=http://smoke.test smoke node /app/scripts/selfhost-smoke.mjs
+          if [ "$code" != "200" ]; then docker logs smoke | tail -30; exit 1; fi
+          docker run --rm --network host \
+            -v "$PWD/scripts:/scripts:ro" \
+            -e BASE_URL=http://127.0.0.1:18787 \
+            -e EXPECT_PUB=http://smoke.test \
+            oven/bun:1.4.3 bun /scripts/verify-workerd.ts
           docker rm -f smoke
 
       - name: Export digest

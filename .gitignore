@@ -54,3 +54,13 @@ graphify-out
 # playwright
 /test-results
 /playwright-report
+
+# workerd evaluation artifacts
+cli/dist-workerd/
+cli/workerd-eval.capnp
+cli/workerd-compat.capnp
+cli/workerd-local.capnp
+cli/wrangler.selfhost.json
+do-data/
+prod-data/
+cli/wrangler.workerd.json
