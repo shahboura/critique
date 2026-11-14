@@ -6,8 +6,7 @@
 # Prefer compose over a bare `docker run`: it wires the /data volume that
 # holds all uploaded diffs and comments.
 # If the proxy runs in Docker, put both on a dedicated network shared only
-# with the proxy: the worker's local dev server also opens internal helper
-# ports besides 8787.
+# with the proxy.
 #
 # nginx users: comments stream over SSE and uploads can be large — for the
 # /a/ and /upload locations add
@@ -45,8 +44,16 @@ services:
       # annotation data there, so they are off by default. Set to "on" to
       # restore the upstream settings panel and manual/auto send.
       CRITIQUE_WIDGET_WEBHOOKS: ${CRITIQUE_WIDGET_WEBHOOKS:-}
+      # Optional payment/email integrations used by the upstream hosted service.
+      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-}
+      STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-}
+      RESEND_API_KEY: ${RESEND_API_KEY:-}
+      RESEND_FROM: ${RESEND_FROM:-}
+      # One-off KV import credential. Leave empty to keep /__migrate/kv
+      # disabled; set it only while migrating an old volume, then unset it.
+      MIGRATE_SECRET: ${MIGRATE_SECRET:-}
     volumes:
-      # Uploaded diffs (KV) and comments (Durable Objects) persist here.
+      # Uploaded diffs and comments (SQLite Durable Objects) persist here.
       # Links expire after 7 days (permanent links need a license key from
       # upstream); comment data accumulates slowly and the volume can be
       # pruned once old diffs no longer matter. It contains your diffs, so

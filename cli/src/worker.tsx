@@ -51,6 +51,7 @@ type Bindings = {
   CRITIQUE_WIDGET_WEBHOOKS?: string
   RESEND_API_KEY?: string
   RESEND_FROM?: string
+  MIGRATE_SECRET?: string
   CommentRoom: { idFromName(name: string): { toString(): string }; get(id: any): { fetch(request: Request): Promise<Response> } }
 }
 
@@ -154,6 +155,66 @@ app.use("*", async (c, next) => {
 })
 
 // Agentation HTTP API (annotations, sessions, SSE)
+// One-off Miniflare KV import, disabled unless MIGRATE_SECRET is set.
+// Remove after the self-host runtime has migrated.
+app.post("/__migrate/kv", async (c) => {
+  const secret = c.env.MIGRATE_SECRET
+  if (!secret || !timingSafeEqual(c.req.header("X-Migrate-Secret") ?? "", secret)) {
+    return c.text("Not found", 404)
+  }
+  const key = c.req.header("X-KV-Key")
+  if (!key) return c.text("Missing key", 400)
+
+  const metadataHeader = c.req.header("X-KV-Metadata")
+  let metadata: unknown
+  if (metadataHeader) {
+    try {
+      metadata = JSON.parse(metadataHeader)
+    } catch {
+      return c.text("Invalid metadata", 400)
+    }
+  }
+
+  const expirationHeader = c.req.header("X-KV-Expiration")
+  let expiration: number | undefined
+  if (expirationHeader !== undefined) {
+    if (!/^[0-9]+$/.test(expirationHeader)) return c.text("Invalid expiration", 400)
+    expiration = Number(expirationHeader)
+    if (!Number.isSafeInteger(expiration) || expiration <= Math.floor(Date.now() / 1000)) {
+      return c.text("Invalid expiration", 400)
+    }
+  }
+
+  const length = Number(c.req.header("content-length"))
+  if (Number.isFinite(length) && length > 25 * 1024 * 1024) {
+    return c.text("Value too large", 413)
+  }
+
+  await c.env.CRITIQUE_KV.put(key, await c.req.arrayBuffer(), {
+    ...(metadata !== undefined ? { metadata } : {}),
+    ...(expiration !== undefined ? { expiration } : {}),
+  })
+  logger.log("KV migrate", { key })
+  c.header("Cache-Control", "no-store")
+  return c.json({ ok: true })
+})
+
+app.get("/__migrate/kv", async (c) => {
+  const secret = c.env.MIGRATE_SECRET
+  if (!secret || !timingSafeEqual(c.req.header("X-Migrate-Secret") ?? "", secret)) {
+    return c.text("Not found", 404)
+  }
+  const key = c.req.header("X-KV-Key")
+  if (!key) return c.text("Missing key", 400)
+  const { value, metadata } = await c.env.CRITIQUE_KV.getWithMetadata(key, "arrayBuffer")
+  if (!value) return c.text("Not found", 404)
+  c.header("Cache-Control", "no-store")
+  return c.body(value, 200, {
+    "Content-Type": "application/octet-stream",
+    ...(metadata ? { "X-KV-Metadata": JSON.stringify(metadata) } : {}),
+  })
+})
+
 app.route("/a", agentationApi)
 
 // Annotations context page (HTML/JSON view of all annotations for a diff)
@@ -672,6 +733,7 @@ app.post("/upload", async (c) => {
       passwordProtected: Boolean(password),
     })
   } catch (error) {
+    logger.log("Upload failed", error)
     return c.json({ error: "Failed to process upload" }, 500)
   }
 })

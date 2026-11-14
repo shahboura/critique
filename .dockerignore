@@ -22,3 +22,9 @@ dist
 critique-screenshot.png
 screenshot.png
 screenshot-web.png
+
+do-data
+**/dist-workerd
+cli/wrangler.selfhost.json
+prod-data
+cli/wrangler.workerd.json

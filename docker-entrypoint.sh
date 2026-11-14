@@ -1,6 +1,6 @@
 #!/bin/sh
-# Entrypoint for the self-hosted critique worker: validates PUBLIC_URL, then
-# starts the same wrangler dev server the image is documented to run.
+# Entrypoint for the self-hosted critique worker: validates optional settings,
+# prepares the persistent Durable Object directory, then starts workerd.
 set -e
 
 if [ -n "$PUBLIC_URL" ]; then
@@ -34,10 +34,23 @@ case "${CRITIQUE_WIDGET_WEBHOOKS:-}" in
     ;;
 esac
 
-exec node cli/node_modules/wrangler/bin/wrangler.js dev \
-  -c cli/wrangler.selfhost.json \
-  --ip 0.0.0.0 \
-  --port 8787 \
-  --persist-to /data \
-  ${PUBLIC_URL:+--var "PUBLIC_URL:$PUBLIC_URL"} \
-  ${CRITIQUE_WIDGET_WEBHOOKS:+--var "CRITIQUE_WIDGET_WEBHOOKS:$CRITIQUE_WIDGET_WEBHOOKS"}
+# The one-off KV import route is a root-equivalent credential while enabled.
+# Require a long random token; unset/empty means the route is disabled.
+if [ -n "${MIGRATE_SECRET:-}" ]; then
+  case "$MIGRATE_SECRET" in
+    *[!A-Za-z0-9_-]*)
+      echo "critique: MIGRATE_SECRET may only contain letters, digits, _ and -" >&2
+      exit 1
+      ;;
+  esac
+  if [ "${#MIGRATE_SECRET}" -lt 32 ]; then
+    echo "critique: MIGRATE_SECRET must be at least 32 characters" >&2
+    exit 1
+  fi
+fi
+
+# Durable Object SQLite files contain diffs and comments.
+umask 077
+mkdir -p /data/v3/do
+
+exec /usr/local/bin/workerd serve /app/workerd.capnp config

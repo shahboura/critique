@@ -38,6 +38,10 @@ jobs:
       - name: Build the comments server
         run: bun run build:comments-server
 
+      - name: Comments server tests
+        working-directory: comments-server
+        run: bun test
+
       # The CLI is not exercised by tsc anywhere else: a dependency whose types
       # change (e.g. an @agentclientprotocol/sdk major) ships an uncompilable
       # binary while the tests below stay green.
@@ -61,6 +65,13 @@ jobs:
       - name: CLI annotation API tests
         working-directory: cli
         run: bun test src/agentation-api.test.ts
+
+      - name: KV protocol tests
+        working-directory: cli
+        run: bun test ./kv-protocol.test.js
+
+      - name: KV migration tests
+        run: bun test ./scripts/migrate-kv.test.ts
 
       - name: Upstream check script
         run: |
